@@ -25,35 +25,38 @@ def visualize_costs(train_cost, train_error, valid_error, test_error,
             os.makedirs(base_folder)
         os.chdir(base_folder)
         
-        output_folder=('Tr:%s V:%s T:%s')%(train_data, valid_data, test_data)
+        output_folder=('[%s], [%s], [%s]')%(",".join(train_data), ",".join(valid_data), ",".join(test_data))
         
         if not os.path.isdir(output_folder):
             os.makedirs(output_folder)
         os.chdir(output_folder)
+        print('Set output')
                         
         train_cost=numpy.asarray(train_cost)
         train_error=numpy.asarray(train_error)
         valid_error=numpy.asarray(valid_error)
         test_error=numpy.asarray(test_error)
-        
-        
+        print('converted to arrays')
+                
         # print errors
         plt.figure(1)
         plt.plot(train_error[:, 0],train_error[:,1],label='train_error')
         plt.plot(valid_error[:, 0],valid_error[:,1],label='valid_error')
         plt.plot(test_error[:, 0],test_error[:,1],label='test_error')
+        print('plots created, start decor')        
         
         # decorative part       
         plt.xlabel('epochs')
         plt.ylabel('error(%)')
         plt.title(
             ('WS: %i  LR: %f')
-            % (window_size, learning_rate, train_data, valid_data, test_data)
+            % (window_size, learning_rate)
         )
         plt.legend(loc='upper left')
-        plot_name = ('errorLR%fWS%i.png')%(learning_rate, window_size)
+        plot_name = ('error LR %f WS %i.png')%(learning_rate, window_size)
         plt.savefig(plot_name, dpi=200)
         plt.close()
+        print('errors visualized')
         
         # print cost
         plt.figure(2)
@@ -64,13 +67,14 @@ def visualize_costs(train_cost, train_error, valid_error, test_error,
         plt.ylabel('cost')
         plt.title(
             ('Window size: %i  Learning rate: %f')
-            % (window_size, learning_rate, train_data, valid_data, test_data)
+            % (window_size, learning_rate)
         )
         plt.legend(loc='upper left')
-        plot_name = ('costLR%fWS%i.png')%(learning_rate, window_size)
+        plot_name = ('cost LR %f WS %i.png')%(learning_rate, window_size)
         plt.savefig(plot_name, dpi=200)                    
         plt.clf()
         plt.close()
+        print('cost visualized')
         
         os.chdir('../')
         os.chdir('../')

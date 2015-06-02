@@ -180,7 +180,11 @@ class LogisticRegression(object):
 def zero_in_array(array):
     return [[0 for col in range(8)] for row in range(8)]
 
-def sgd_optimization_ichi(learning_rate=0.009, n_epochs=50, window_size = 6):
+def test_params(learning_rate, n_epochs, window_size,
+                          train_set_x, train_set_y,
+                          valid_set_x, valid_set_y,
+                          test_set_x, test_set_y,
+                          train_data, valid_data, test_data):
     """
     Demonstrate stochastic gradient descent optimization of a log-linear
     model
@@ -196,20 +200,10 @@ def sgd_optimization_ichi(learning_rate=0.009, n_epochs=50, window_size = 6):
 
     """
     
-    train_data = ['p019', 'p003','p005', 'p007', 'p15a']
-    valid_data = ['p002', 'p10a']
-    test_data = ['p08a']
-    
-    train_reader = ICHISeqDataReader(train_data)
-    train_set_x, train_set_y = train_reader.read_all()
     n_train_samples =  train_set_x.get_value(borrow=True).shape[0] - window_size + 1
     
-    valid_reader = ICHISeqDataReader(valid_data)
-    valid_set_x, valid_set_y = valid_reader.read_all()
     n_valid_samples = valid_set_x.get_value(borrow=True).shape[0] - window_size + 1
     
-    test_reader = ICHISeqDataReader(test_data)
-    test_set_x, test_set_y = test_reader.read_all()   
     n_test_samples = test_set_x.get_value(borrow=True).shape[0] - window_size + 1
     
     
@@ -237,7 +231,6 @@ def sgd_optimization_ichi(learning_rate=0.009, n_epochs=50, window_size = 6):
 
     # compiling a Theano function that computes the mistakes that are made by
     # the model on a row
-    print(test_set_x, 'test_set_x')
     test_model = theano.function(
         inputs=[index],
         outputs=[classifier.errors(y), predict, y],
@@ -373,7 +366,7 @@ def sgd_optimization_ichi(learning_rate=0.009, n_epochs=50, window_size = 6):
                             test_score
                         )
                     )
-            if patience*10 <= iter:
+            if patience*4 <= iter:
                 done_looping = True
                 break
                         
@@ -424,10 +417,32 @@ def sgd_optimization_ichi(learning_rate=0.009, n_epochs=50, window_size = 6):
     print(train_confusion_matrix, 'train_confusion_matrix')
     print(valid_confusion_matrix, 'valid_confusion_matrix')
     print(test_confusion_matrix, 'test_confusion_matrix')
-
-if __name__ == '__main__':
+    
+def test_all_params():
     learning_rates = [0.001, 0.003, 0.005, 0.007, 0.009, 0.011, 0.013, 0.015]
     window_sizes = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    
+    train_data = ['p019','p003','p005','p007','p15a']
+    valid_data = ['p002','p10a']
+    test_data = ['p08a']
+    
+    train_reader = ICHISeqDataReader(train_data)
+    train_set_x, train_set_y = train_reader.read_all()
+    
+    valid_reader = ICHISeqDataReader(valid_data)
+    valid_set_x, valid_set_y = valid_reader.read_all()
+
+    test_reader = ICHISeqDataReader(test_data)
+    test_set_x, test_set_y = test_reader.read_all()   
+    
     for lr in learning_rates:
         for ws in window_sizes:
-            sgd_optimization_ichi(learning_rate=lr, n_epochs=50, window_size = ws)
+            test_params(learning_rate=lr, n_epochs=50, window_size = ws,
+                                  train_set_x=train_set_x, train_set_y=train_set_y,
+                                  valid_set_x=valid_set_x, valid_set_y=valid_set_y,
+                                  test_set_x=test_set_x, test_set_y=test_set_y,
+                                  train_data=train_data, valid_data=valid_data,
+                                  test_data=test_data)
+
+if __name__ == '__main__':
+    test_all_params()
