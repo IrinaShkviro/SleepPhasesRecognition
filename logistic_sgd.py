@@ -178,7 +178,7 @@ class LogisticRegression(object):
         return self.y_pred
         
 def zero_in_array(array):
-    return [[0 for col in range(8)] for row in range(8)]
+    return [[0 for col in range(7)] for row in range(7)]
 
 def test_params(learning_rate, n_epochs, window_size,
                           train_set_x, train_set_y,
@@ -297,8 +297,8 @@ def test_params(learning_rate, n_epochs, window_size,
     test_error_array = []
     cur_train_cost =[]
     cur_train_error = []
-    train_confusion_matrix = numpy.zeros((8, 8))
-    valid_confusion_matrix = numpy.zeros((8, 8))
+    train_confusion_matrix = numpy.zeros((7, 7))
+    valid_confusion_matrix = numpy.zeros((7, 7))
     print(n_train_samples, 'train_samples')
     #try:
     while (epoch < n_epochs) and (not done_looping):
@@ -386,7 +386,7 @@ def test_params(learning_rate, n_epochs, window_size,
     #    print('catch Exception')
     
     #finally:
-    test_confusion_matrix = zero_in_array(numpy.zeros((8, 8)))
+    test_confusion_matrix = zero_in_array(numpy.zeros((7, 7)))
     test_losses = []
     for i in xrange(n_test_samples):
         test_loss, cur_pred, cur_actual = test_model(i)
@@ -422,9 +422,9 @@ def test_all_params():
     learning_rates = [0.001, 0.003, 0.005, 0.007, 0.009, 0.011, 0.013, 0.015]
     window_sizes = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
     
-    train_data = ['p019','p003','p005','p007','p15a']
-    valid_data = ['p002','p10a']
-    test_data = ['p08a']
+    train_data = ['p10a','p011','p013','p014','p020','p022','p040','p045','p048']
+    valid_data = ['p09b','p023','p035','p038']
+    test_data = ['p09a','p033']
     
     train_reader = ICHISeqDataReader(train_data)
     train_set_x, train_set_y = train_reader.read_all()
