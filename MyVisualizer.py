@@ -69,7 +69,7 @@ def visualize_costs(train_cost, train_error, valid_error, test_error,
             ('Window size: %i  Learning rate: %f')
             % (window_size, learning_rate)
         )
-        plt.legend(loc='upper left')
+        plt.legend(loc='upper right')
         plot_name = ('cost LR %f WS %i.png')%(learning_rate, window_size)
         plt.savefig(plot_name, dpi=200)                    
         plt.clf()

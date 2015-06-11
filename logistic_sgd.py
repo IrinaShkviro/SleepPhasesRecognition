@@ -101,8 +101,8 @@ class LogisticRegression(object):
         # x is a matrix where row-j  represents input training sample-j
         # b is a vector where element-k represent the free parameter of hyper
         # plain-k
-        self.p_y_given_x = T.flatten(T.nnet.softmax(T.dot(input.reshape((1,n_in)),
-                                                 self.W) + self.b), 1)
+        self.p_y_given_x = T.flatten(T.nnet.sigmoid(T.dot(input.reshape((1,n_in)),
+                                                 self.W) + self.b))
 
         # symbolic description of how to compute prediction as class whose
         # probability is maximal
@@ -111,24 +111,21 @@ class LogisticRegression(object):
 
         # parameters of the model
         self.params = [self.W, self.b]
+        
+    def print_log_reg_types(self):
+        print(self.W.type(), 'W')
+        print(self.b.type(), 'b')
+        print(self.p_y_given_x.type(), 'p_y_given_x')
+        print(self.y_pred.type(), 'y_pred')
+        
 
     def negative_log_likelihood(self, y):
-        """Return the mean of the negative log-likelihood of the prediction
+        """Return the negative log-likelihood of the prediction
         of this model under a given target distribution.
 
-        .. math::
-
-            \frac{1}{|\mathcal{D}|} \mathcal{L} (\theta=\{W,b\}, \mathcal{D}) =
-            \frac{1}{|\mathcal{D}|} \sum_{i=0}^{|\mathcal{D}|}
-                \log(P(Y=y^{(i)}|x^{(i)}, W,b)) \\
-            \ell (\theta=\{W,b\}, \mathcal{D})
-
         :type y: theano.tensor.TensorType
-        :param y: corresponds to a vector that gives for each example the
+        :param y: corresponds to a number that gives for each example the
                   correct label
-
-        Note: we use the mean instead of the sum so that
-              the learning rate is less dependent on the batch size
         """
         # start-snippet-2
         # y.shape[0] is (symbolically) the number of rows in y, i.e.,
@@ -147,9 +144,7 @@ class LogisticRegression(object):
         # end-snippet-2
 
     def errors(self, y):
-        """Return a float representing the number of errors in the minibatch
-        over the total number of examples of the minibatch ; zero one
-        loss over the size of the minibatch
+        """Return 1 if y!=y_predicted (error) and 0 if right
 
         :type y: theano.tensor.TensorType
         :param y: corresponds to a vector that gives for each example the
@@ -176,6 +171,9 @@ class LogisticRegression(object):
         Return predicted y
         """
         return self.y_pred
+        
+    def distribution(self):
+        return self.p_y_given_x
         
 def zero_in_array(array):
     return [[0 for col in range(7)] for row in range(7)]
@@ -223,11 +221,13 @@ def test_params(learning_rate, n_epochs, window_size,
     # construct the logistic regression class
     # Each ICHI input has size window_size*3
     classifier = LogisticRegression(input=x, n_in=window_size*3, n_out=7)
+    classifier.print_log_reg_types()
 
     # the cost we minimize during training is the negative log likelihood of
     # the model in symbolic format
     cost = classifier.negative_log_likelihood(y)
     predict = classifier.predict()
+    distribution = classifier.distribution()
 
     # compiling a Theano function that computes the mistakes that are made by
     # the model on a row
@@ -346,8 +346,10 @@ def test_params(learning_rate, n_epochs, window_size,
                     best_validation_loss = this_validation_loss
                     # test it on the test set
                        
-                    test_losses = [test_model(i)
+                    test_result = [test_model(i)
                                    for i in xrange(n_test_samples)]
+                    test_result = numpy.asarray(test_result)
+                    test_losses = test_result[:,0]
                     test_score = float(numpy.mean(test_losses))*100
                         
                     test_error_array.append([])
