@@ -40,7 +40,7 @@ import theano
 import theano.tensor as T
 from theano.tensor.shared_randomstreams import RandomStreams
 
-import ichi_seq_data_reader
+from ichi_seq_data_reader import ICHISeqDataReader
 from MyVisualizer import visualize_da
 
 try:

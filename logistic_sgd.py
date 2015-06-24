@@ -44,7 +44,7 @@ import theano
 import theano.tensor as T
 
 from MyVisualizer import visualize_costs
-import ichi_seq_data_reader
+from ichi_seq_data_reader import ICHISeqDataReader
 
 
 class LogisticRegression(object):

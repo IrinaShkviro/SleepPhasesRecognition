@@ -10,10 +10,6 @@ import os
 import numpy
 import matplotlib.pyplot as plt
 
-class LogisticRegression(object):
-    def __init__(self):
-        print "visualizer"
-        
 def visualize_costs(train_cost, train_error, valid_error, test_error, 
                     window_size, learning_rate,
                     train_data, valid_data, test_data):
