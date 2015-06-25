@@ -300,7 +300,7 @@ def test_params(learning_rate, n_epochs, window_size,
     train_confusion_matrix = numpy.zeros((7, 7))
     valid_confusion_matrix = numpy.zeros((7, 7))
     print(n_train_samples, 'train_samples')
-    #try:
+    
     while (epoch < n_epochs) and (not done_looping):
         train_confusion_matrix = zero_in_array(train_confusion_matrix)
         for index in xrange(n_train_samples):            
@@ -399,6 +399,7 @@ def test_params(learning_rate, n_epochs, window_size,
     test_error_array.append([])
     test_error_array[-1].append(float(iter)/n_train_samples)
     test_error_array[-1].append(test_score)
+    
     visualize_costs(train_cost_array, train_error_array, 
                     valid_error_array, test_error_array,
                     window_size, learning_rate,
