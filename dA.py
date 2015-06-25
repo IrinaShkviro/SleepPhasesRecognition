@@ -243,9 +243,7 @@ class dA(object):
         return T.mean(T.neq(self.z, self.x), dtype=theano.config.floatX)
         
 def train_dA(learning_rate, training_epochs, window_size, corruption_level, n_hidden,
-                          train_set_x, train_set_y,
-                          valid_set_x, valid_set_y,
-                          test_set_x, test_set_y,
+                          train_set, valid_set, test_set,
                           train_data, valid_data, test_data):
 
     """
@@ -271,11 +269,11 @@ def train_dA(learning_rate, training_epochs, window_size, corruption_level, n_hi
 
     """
     
-    n_train_samples = train_set_x.get_value(borrow=True).shape[0] - window_size + 1
+    n_train_samples = train_set.get_value(borrow=True).shape[0] - window_size + 1
 
-    n_valid_samples = valid_set_x.get_value(borrow=True).shape[0] - window_size + 1
+    n_valid_samples = valid_set.get_value(borrow=True).shape[0] - window_size + 1
        
-    n_test_samples = test_set_x.get_value(borrow=True).shape[0] - window_size + 1
+    n_test_samples = test_set.get_value(borrow=True).shape[0] - window_size + 1
     
     # allocate symbolic variables for the data
     index = T.lscalar()    # index to a [mini]batch
@@ -304,7 +302,7 @@ def train_dA(learning_rate, training_epochs, window_size, corruption_level, n_hi
         outputs=[cost, error],
         updates=updates,
         givens={
-            x: train_set_x[index: index + window_size]
+            x: train_set[index: index + window_size]
         }
     )
     
@@ -312,7 +310,7 @@ def train_dA(learning_rate, training_epochs, window_size, corruption_level, n_hi
         inputs=[index],
         outputs=error,
         givens={
-            x: valid_set_x[index: index + window_size],
+            x: valid_set[index: index + window_size],
         }
     )
         
@@ -320,7 +318,7 @@ def train_dA(learning_rate, training_epochs, window_size, corruption_level, n_hi
         inputs=[index],
         outputs=error,
         givens={
-            x: test_set_x[index: index + window_size],
+            x: test_set[index: index + window_size],
         }
     )
 
@@ -436,15 +434,11 @@ def train_dA(learning_rate, training_epochs, window_size, corruption_level, n_hi
     
     visualize_da(train_cost_array,
                  train_error_array, valid_error_array, test_error_array,
-                 window_size, learning_rate, corruption_level,
+                 window_size, learning_rate, corruption_level, n_hidden,
                  train_data, valid_data, test_data)
     
     end_time = time.clock()
     training_time = (end_time - start_time)
-        
-    visualize_da(train_error_array, valid_error_array, test_error_array, 
-                 window_size, learning_rate, corruption_level, 
-                 train_data, valid_data, test_data)
     
     print >> sys.stderr, ('The no corruption code for file ' +
                           os.path.split(__file__)[1] +
@@ -461,23 +455,20 @@ def test_da_params(corruption_level):
     test_data = ['p09a','p033']
     
     train_reader = ICHISeqDataReader(train_data)
-    train_set_x, train_set_y = train_reader.read_all()
+    train_set = train_reader.read_all_for_da()
     
     valid_reader = ICHISeqDataReader(valid_data)
-    valid_set_x, valid_set_y = valid_reader.read_all()
+    valid_set = valid_reader.read_all_for_da()
 
     test_reader = ICHISeqDataReader(test_data)
-    test_set_x, test_set_y = test_reader.read_all()   
+    test_set = test_reader.read_all_for_da()   
     
     for lr in learning_rates:
         for ws in window_sizes:
-            train_dA(learning_rate=lr, training_epochs=50, window_size = ws, 
+            train_dA(learning_rate=lr, training_epochs=1, window_size = ws, 
                      corruption_level=corruption_level, n_hidden=ws*2,
-                                  train_set_x=train_set_x, train_set_y=train_set_y,
-                                  valid_set_x=valid_set_x, valid_set_y=valid_set_y,
-                                  test_set_x=test_set_x, test_set_y=test_set_y,
-                                  train_data=train_data, valid_data=valid_data,
-                                  test_data=test_data)
+                     train_set=train_set, valid_set=valid_set, test_set=test_set,
+                     train_data=train_data, valid_data=valid_data, test_data=test_data)
 
 
 if __name__ == '__main__':

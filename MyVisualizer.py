@@ -76,7 +76,7 @@ def visualize_costs(train_cost, train_error, valid_error, test_error,
         os.chdir('../')
 
 def visualize_da(train_cost, train_error, valid_error, test_error, 
-                 window_size, learning_rate, corruption_level,
+                 window_size, learning_rate, corruption_level, n_hidden,
                  train_data, valid_data, test_data):
         print "Visualizer visualize_costs"
         
@@ -115,11 +115,12 @@ def visualize_da(train_cost, train_error, valid_error, test_error,
         plt.xlabel('epochs')
         plt.ylabel('error(%)')
         plt.title(
-            ('WS: %i  LR: %f CL: %f')
-            % (window_size, learning_rate, corruption_level)
+            ('WS: %i  LR: %f CL: %f Hid: %i')
+            % (window_size, learning_rate, corruption_level, n_hidden)
         )
         plt.legend(loc='upper left')
-        plot_name = ('error LR %f WS %i CL %f.png') % (learning_rate, window_size, corruption_level)
+        plot_name = ('error LR %f WS %i CL %f Hid %i.png') \
+            % (learning_rate, window_size, corruption_level, n_hidden)
         plt.savefig(plot_name, dpi=200)
         plt.close()
         print('errors visualized')
@@ -132,11 +133,12 @@ def visualize_da(train_cost, train_error, valid_error, test_error,
         plt.xlabel('epochs')
         plt.ylabel('cost')
         plt.title(
-            ('WS: %i  LR: %f CL: %f')
-            % (window_size, learning_rate, corruption_level)
+            ('WS: %i  LR: %f CL: %f Hid: %i')
+            % (window_size, learning_rate, corruption_level, n_hidden)
         )
         plt.legend(loc='upper right')
-        plot_name = ('error LR %f WS %i CL %f.png') % (learning_rate, window_size, corruption_level)
+        plot_name = ('cost LR %f WS %i CL %f H %i.png') \
+            % (learning_rate, window_size, corruption_level, n_hidden)
         plt.savefig(plot_name, dpi=200)                    
         plt.clf()
         plt.close()
