@@ -21,7 +21,7 @@ class ICHISeqDataReader(object):
         
         self.sequence_index = 0
         # path to folder with data
-        dataset = 'D:\Irka\Projects\NeuralNetwok\data\data' # "./data/7/ICHI14_data_set/data"
+        dataset = 'D:\Irka\Project\data' # "./data/7/ICHI14_data_set/data"
         self.init_sequence(dataset)
     
     # read all docs in sequence
@@ -121,70 +121,5 @@ class ICHISeqDataReader(object):
         
         # convert records with data to array with x, y, z coordinates and gt as label of class
         sequence_matrix = numpy.asarray(zip(data.x,data.y,data.z, data.gt))
-        print(sequence_matrix, 'seq matrix')
-  
-        return sequence_matrix
-        
-    def read_all_for_da(self):
-        # sequence_matrix = array[size of 1st doc][data.x, data.y, data.z]
-        sequence_matrix = self.get_sequence_for_da()
-
-        # d_x1 = array[size of 1st doc][x, y, z]
-        d_x1 = sequence_matrix[:, 0:self.n_in]
-        
-        # data_x_ar = union for (x, y, z) coordinates in all files
-        data_x = d_x1
-        
-        for t in range(len(self.seqs) - 1):
-            # sequence_matrix = array[size of t-th doc][data.x, data.y, data.z]
-            sequence_matrix = self.get_sequence_for_da()
-
-            # d_x = array[size of t-th doc][x, y, z]
-            d_x = sequence_matrix[:, 0:self.n_in]
-            
-            # concatenate data in current file with data in prev files in one array
-            data_x = numpy.vstack((data_x, d_x))
-                            
-            gc.collect()
-        
-        set_x = theano.shared(numpy.asarray(data_x,
-                                                   dtype=theano.config.floatX),
-                                     borrow=True)
-        return set_x 
-    
-    # read one doc in sequence
-    def read_next_doc_for_da(self):    
-       
-        # sequence_matrix = array[size of doc][data.x, data.y, data.z, data.gt]
-        sequence_matrix = self.get_sequence_for_da()
-        
-        # d_x = array[size of doc][x, y, z]
-        d_x = sequence_matrix[:, 0:self.n_in]
-        
-        data_x = d_x
-
-        gc.collect()
-        
-        set_x = theano.shared(numpy.asarray(data_x,
-                                                   dtype=theano.config.floatX),
-                                     borrow=True)
-        return set_x
-        
-    def get_sequence_for_da(self):
-        
-        if self.sequence_index>=len(self.sequence_files):
-            self.sequence_index = 0
-            
-        sequence_file = self.sequence_files[self.sequence_index]
-        self.sequence_index = self.sequence_index+1
-        return self.read_sequence_for_da(sequence_file)
-        
-    #read sequence_file and return array of data (x, y, z)
-    def read_sequence_for_da(self, sequence_file):
-        # load files with data as records
-        data = numpy.load(sequence_file).view(numpy.recarray)
-            
-        # convert records with data to array with x, y, z coordinates
-        sequence_matrix = numpy.asarray(zip(data.x,data.y,data.z))
   
         return sequence_matrix
