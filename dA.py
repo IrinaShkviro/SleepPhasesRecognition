@@ -442,7 +442,7 @@ def train_dA(learning_rate, training_epochs, window_size, corruption_level, n_hi
 
 def test_da_params(corruption_level):
     learning_rates = [0.001, 0.003, 0.005, 0.007, 0.009, 0.011, 0.013, 0.015]
-    window_sizes = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    window_sizes = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
     
     train_data = ['p10a','p011','p013','p014','p020','p022','p040','p045','p048']
     valid_data = ['p09b','p023','p035','p038']
