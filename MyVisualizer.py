@@ -75,7 +75,7 @@ def visualize_costs(train_cost, train_error, valid_error, test_error,
         os.chdir('../')
         os.chdir('../')
 
-def visualize_da(train_cost, train_error, valid_error, test_error, 
+def visualize_da(train_cost, valid_cost, test_cost, 
                  window_size, learning_rate, corruption_level, n_hidden,
                  train_data, valid_data, test_data):
         print "Visualizer visualize_costs"
@@ -99,21 +99,20 @@ def visualize_da(train_cost, train_error, valid_error, test_error,
         print('Set output')
                         
         train_cost=numpy.asarray(train_cost)
-        train_error=numpy.asarray(train_error)
-        valid_error=numpy.asarray(valid_error)
-        test_error=numpy.asarray(test_error)
+        valid_cost=numpy.asarray(valid_cost)
+        test_cost=numpy.asarray(test_cost)
         print('converted to arrays')        
         
         # print errors
         plt.figure(1)
-        plt.plot(train_error[:, 0],train_error[:,1],label='train_error')
-        plt.plot(valid_error[:, 0],valid_error[:,1],label='valid_error')
-        plt.plot(test_error[:, 0],test_error[:,1],label='test_error')
+        plt.plot(train_cost[:, 0],train_cost[:,1],label='train_cost')
+        plt.plot(valid_cost[:, 0],valid_cost[:,1],label='valid_cost')
+        plt.plot(test_cost[:, 0],test_cost[:,1],label='test_cost')
         print('plots created, start decor')        
         
         # decorative part       
         plt.xlabel('epochs')
-        plt.ylabel('error(%)')
+        plt.ylabel('cost')
         plt.title(
             ('WS: %i  LR: %f CL: %f Hid: %i')
             % (window_size, learning_rate, corruption_level, n_hidden)
@@ -123,26 +122,7 @@ def visualize_da(train_cost, train_error, valid_error, test_error,
             % (learning_rate, window_size, corruption_level, n_hidden)
         plt.savefig(plot_name, dpi=200)
         plt.close()
-        print('errors visualized')
-        
-        # print cost
-        plt.figure(2)
-        plt.plot(train_cost[:, 0],train_cost[:,1],label='train_cost')
-
-        # decorative part      
-        plt.xlabel('epochs')
-        plt.ylabel('cost')
-        plt.title(
-            ('WS: %i  LR: %f CL: %f Hid: %i')
-            % (window_size, learning_rate, corruption_level, n_hidden)
-        )
-        plt.legend(loc='upper right')
-        plot_name = ('cost LR %f WS %i CL %f H %i.png') \
-            % (learning_rate, window_size, corruption_level, n_hidden)
-        plt.savefig(plot_name, dpi=200)                    
-        plt.clf()
-        plt.close()
-        print('cost visualized')
+        print('costs visualized')
         
         os.chdir('../')
         os.chdir('../')

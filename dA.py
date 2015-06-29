@@ -168,8 +168,6 @@ class dA(object):
         self.theano_rng = theano_rng
         # if no input is given, generate a variable representing the input
         if input is None:
-            # we use a matrix because we expect a minibatch of several
-            # examples, each example being a row
             self.x = T.dmatrix(name='input')
         else:
             self.x = input.reshape((1, self.n_visible))
@@ -236,11 +234,17 @@ class dA(object):
 
         return (cost, updates)
         
-    def error(self):
+    def predict(self):
         """
-        Return mean value for vector of errors (1 if error)
+        Return predicted vector
         """
-        return T.mean(T.neq(self.z, self.x), dtype=theano.config.floatX)
+        return self.z
+    
+    def actual(self):
+        """
+        Return actual vector
+        """
+        return self.x    
         
 def train_dA(learning_rate, training_epochs, window_size, corruption_level, n_hidden,
                           train_set, valid_set, test_set,
@@ -276,7 +280,7 @@ def train_dA(learning_rate, training_epochs, window_size, corruption_level, n_hi
     n_test_samples = test_set.get_value(borrow=True).shape[0] - window_size + 1
     
     # allocate symbolic variables for the data
-    index = T.lscalar()    # index to a [mini]batch
+    index = T.lscalar()    # index
     x = T.matrix('x')  # the data is presented as 3D vector
 
     rng = numpy.random.RandomState(123)
@@ -295,11 +299,12 @@ def train_dA(learning_rate, training_epochs, window_size, corruption_level, n_hi
         learning_rate=learning_rate
     )
     
-    error = da.error()
+    predict = da.predict()
+    actual = da.actual()
     
     train_da = theano.function(
         [index],
-        outputs=[cost, error],
+        outputs=[cost, predict, actual],
         updates=updates,
         givens={
             x: train_set[index: index + window_size]
@@ -308,7 +313,7 @@ def train_dA(learning_rate, training_epochs, window_size, corruption_level, n_hi
     
     validate_da = theano.function(
         inputs=[index],
-        outputs=error,
+        outputs=cost,
         givens={
             x: valid_set[index: index + window_size],
         }
@@ -316,7 +321,7 @@ def train_dA(learning_rate, training_epochs, window_size, corruption_level, n_hi
         
     test_da = theano.function(
         inputs=[index],
-        outputs=error,
+        outputs=cost,
         givens={
             x: test_set[index: index + window_size],
         }
@@ -332,7 +337,7 @@ def train_dA(learning_rate, training_epochs, window_size, corruption_level, n_hi
                                       # considered significant
     validation_frequency = patience / 4
     
-    best_validation_error = numpy.inf
+    best_validation_cost = numpy.inf
     start_time = time.clock()
     
     done_looping = False
@@ -340,71 +345,68 @@ def train_dA(learning_rate, training_epochs, window_size, corruption_level, n_hi
     iter = 0
    
     train_cost_array = []
-    train_error_array = []
-    valid_error_array = []
-    test_error_array = []
+    valid_cost_array = []
+    test_cost_array = []
     cur_train_cost =[]
-    cur_train_error = []
     print(n_train_samples, 'train_samples')
 
     # go through training epochs
     while (epoch < training_epochs) and (not done_looping):
         # go through trainng set
         for index in xrange(n_train_samples):
-            sample_cost, sample_error = train_da(index)
+            sample_cost, sample_predict, sample_actual = train_da(index)
             # iteration number
             iter = epoch * n_train_samples + index
             
             cur_train_cost.append(sample_cost)
-            cur_train_error.append(sample_error)
                
             if (iter + 1) % validation_frequency == 0:
                 # compute zero-one loss on validation set
-                validation_errors = [validate_da(i)
+                validation_costs = [validate_da(i)
                                    for i in xrange(n_valid_samples)]
-                validation_error = float(numpy.mean(numpy.asarray(validation_errors)))*100
+                validation_cost = float(numpy.mean(numpy.asarray(validation_costs)))*100
                    
-                valid_error_array.append([])
-                valid_error_array[-1].append(float(iter)/n_train_samples)
-                valid_error_array[-1].append(validation_error)
+                valid_cost_array.append([])
+                valid_cost_array[-1].append(float(iter)/n_train_samples)
+                valid_cost_array[-1].append(validation_cost)
                     
                 print(
-                    'epoch %i, minibatch %i/%i, validation error %f %%' %
+                    'epoch %i, iter %i/%i, validation error %f %%' %
                     (
                         epoch,
                         index + 1,
                         n_train_samples,
-                        validation_error
+                        validation_cost
                     )
                 )
                    
                 # if we got the best validation score until now
-                if validation_error < best_validation_error:
+                if validation_cost < best_validation_cost:
                     #improve patience if loss improvement is good enough
-                    if validation_error < best_validation_error *  \
+                    if validation_cost < best_validation_cost *  \
                        improvement_threshold:
                         patience = max(patience, iter * patience_increase)
     
-                    best_validation_error = validation_error
+                    best_validation_cost = validation_cost
                     # test it on the test set                      
-                    test_error = [test_da(i)
+                    test_costs = [test_da(i)
                                    for i in xrange(n_test_samples)]
-                    test_error = float(numpy.mean(numpy.asarray(test_error)))*100
+                    test_cost = float(numpy.mean(numpy.asarray(test_costs)))*100
                         
-                    test_error_array.append([])
-                    test_error_array[-1].append(float(iter)/n_train_samples)
-                    test_error_array[-1].append(test_error)
+                    test_cost_array.append([])
+                    test_cost_array[-1].append(float(iter)/n_train_samples)
+                    test_cost_array[-1].append(test_cost)
     
                     print(
                         (
-                            '     epoch %i, minibatch %i/%i, test error of'
+                            '     epoch %i, iter %i/%i, test error of'
                             ' best model %f %%'
                         ) %
                         (
                             epoch,
                             index + 1,
                             n_train_samples,
-                            test_error
+                            test_cost
                         )
                     )
                               
@@ -416,24 +418,18 @@ def train_dA(learning_rate, training_epochs, window_size, corruption_level, n_hi
         train_cost_array[-1].append(float(iter)/n_train_samples)
         train_cost_array[-1].append(float(numpy.mean(cur_train_cost)))
         cur_train_cost =[]
-    
-        train_error_array.append([])
-        train_error_array[-1].append(float(iter)/n_train_samples)
-        train_error_array[-1].append(float(numpy.mean(cur_train_error)*100))
-        cur_train_error =[]
-            
+                
         epoch = epoch + 1
                 
-    test_error = [test_da(i)
+    test_costs = [test_da(i)
                     for i in xrange(n_test_samples)]
-    test_error = float(numpy.mean(numpy.asarray(test_error)))*100
+    test_cost = float(numpy.mean(numpy.asarray(test_costs)))*100
                         
-    test_error_array.append([])
-    test_error_array[-1].append(float(iter)/n_train_samples)
-    test_error_array[-1].append(test_error)                   
+    test_cost_array.append([])
+    test_cost_array[-1].append(float(iter)/n_train_samples)
+    test_cost_array[-1].append(test_cost)                   
     
-    visualize_da(train_cost_array,
-                 train_error_array, valid_error_array, test_error_array,
+    visualize_da(train_cost_array, valid_cost_array, test_cost_array,
                  window_size, learning_rate, corruption_level, n_hidden,
                  train_data, valid_data, test_data)
     
@@ -444,8 +440,6 @@ def train_dA(learning_rate, training_epochs, window_size, corruption_level, n_hi
                           os.path.split(__file__)[1] +
                          ' ran for %.2fm' % ((training_time) / 60.))
 
-    os.chdir('../')
-
 def test_da_params(corruption_level):
     learning_rates = [0.001, 0.003, 0.005, 0.007, 0.009, 0.011, 0.013, 0.015]
     window_sizes = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
@@ -455,13 +449,13 @@ def test_da_params(corruption_level):
     test_data = ['p09a','p033']
     
     train_reader = ICHISeqDataReader(train_data)
-    train_set = train_reader.read_all_for_da()
+    train_set, train_labels = train_reader.read_all()
     
     valid_reader = ICHISeqDataReader(valid_data)
-    valid_set = valid_reader.read_all_for_da()
+    valid_set, valid_labels = valid_reader.read_all()
 
     test_reader = ICHISeqDataReader(test_data)
-    test_set = test_reader.read_all_for_da()   
+    test_set, test_labels = test_reader.read_all()   
     
     for lr in learning_rates:
         for ws in window_sizes:
