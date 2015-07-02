@@ -11,8 +11,7 @@ import numpy
 import matplotlib.pyplot as plt
 
 def visualize_costs(train_cost, train_error, valid_error, test_error, 
-                    window_size, learning_rate,
-                    train_data, valid_data, test_data):
+                    window_size, learning_rate, output_folder):
         print "Visualizer visualize_costs"
         
         base_folder='regression_plots'
@@ -20,9 +19,7 @@ def visualize_costs(train_cost, train_error, valid_error, test_error,
         if not os.path.isdir(base_folder):
             os.makedirs(base_folder)
         os.chdir(base_folder)
-        
-        output_folder=('[%s], [%s], [%s]')%(",".join(train_data), ",".join(valid_data), ",".join(test_data))
-        
+                
         if not os.path.isdir(output_folder):
             os.makedirs(output_folder)
         os.chdir(output_folder)
@@ -77,7 +74,7 @@ def visualize_costs(train_cost, train_error, valid_error, test_error,
 
 def visualize_da(train_cost, valid_cost, test_cost, 
                  window_size, learning_rate, corruption_level, n_hidden,
-                 train_data, valid_data, test_data):
+                 output_folder):
         print "Visualizer visualize_costs"
         
         base_folder='dA_plots'
@@ -90,8 +87,6 @@ def visualize_da(train_cost, valid_cost, test_cost,
         if not os.path.isdir(corrupt_folder):
             os.makedirs(corrupt_folder)
         os.chdir(corrupt_folder)
-        
-        output_folder=('[%s], [%s], [%s]')%(",".join(train_data), ",".join(valid_data), ",".join(test_data))
         
         if not os.path.isdir(output_folder):
             os.makedirs(output_folder)

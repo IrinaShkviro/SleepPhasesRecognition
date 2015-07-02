@@ -247,8 +247,7 @@ class dA(object):
         return self.x    
         
 def train_dA(learning_rate, training_epochs, window_size, corruption_level, n_hidden,
-                          train_set, valid_set, test_set,
-                          train_data, valid_data, test_data):
+             datasets, output_folder):
 
     """
     This dA is tested on ICHI_Data
@@ -263,15 +262,24 @@ def train_dA(learning_rate, training_epochs, window_size, corruption_level, n_hi
     :type window_size: int
     :param window_size: size of window used for training
 
-    :type dataset: string
-    :param dataset: path to the picked dataset
-    
     :type corruption_level: float
     :param corruption_level: corruption_level used for training the DeNosing
                           AutoEncoder
 
+    :type n_hidden: int
+    :param n_hidden: count of nodes in hidden layer
+
+    :type datasets: array
+    :param datasets: [train_set, valid_set, test_set]
+    
+    :type output_folder: string
+    :param output_folder: folder for costand error graphics with results
 
     """
+    
+    train_set = datasets[0]
+    valid_set = datasets[1]
+    test_set = datasets[2]    
     
     n_train_samples = train_set.get_value(borrow=True).shape[0] - window_size + 1
 
@@ -431,7 +439,7 @@ def train_dA(learning_rate, training_epochs, window_size, corruption_level, n_hi
     
     visualize_da(train_cost_array, valid_cost_array, test_cost_array,
                  window_size, learning_rate, corruption_level, n_hidden,
-                 train_data, valid_data, test_data)
+                 output_folder)
     
     end_time = time.clock()
     training_time = (end_time - start_time)
@@ -455,14 +463,17 @@ def test_da_params(corruption_level):
     valid_set, valid_labels = valid_reader.read_all()
 
     test_reader = ICHISeqDataReader(test_data)
-    test_set, test_labels = test_reader.read_all()   
+    test_set, test_labels = test_reader.read_all()
+    
+    datasets = [train_set, valid_set, test_set]
+    
+    output_folder=('[%s], [%s], [%s]')%(",".join(train_data), ",".join(valid_data), ",".join(test_data))
     
     for lr in learning_rates:
         for ws in window_sizes:
             train_dA(learning_rate=lr, training_epochs=1, window_size = ws, 
                      corruption_level=corruption_level, n_hidden=ws*2,
-                     train_set=train_set, valid_set=valid_set, test_set=test_set,
-                     train_data=train_data, valid_data=valid_data, test_data=test_data)
+                     datasets=datasets, output_folder=output_folder)
 
 
 if __name__ == '__main__':

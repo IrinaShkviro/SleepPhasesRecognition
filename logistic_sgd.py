@@ -37,6 +37,7 @@ __docformat__ = 'restructedtext en'
 import os
 import sys
 import time
+import gc
 
 import numpy
 
@@ -101,7 +102,7 @@ class LogisticRegression(object):
         # x is a matrix where row-j  represents input training sample-j
         # b is a vector where element-k represent the free parameter of hyper
         # plain-k
-        self.p_y_given_x = T.flatten(T.nnet.sigmoid(T.dot(input.reshape((1,n_in)),
+        self.p_y_given_x = T.flatten(T.nnet.softmax(T.dot(input.reshape((1,n_in)),
                                                  self.W) + self.b))
 
         # symbolic description of how to compute prediction as class whose
@@ -179,10 +180,7 @@ def zero_in_array(array):
     return [[0 for col in range(7)] for row in range(7)]
 
 def test_params(learning_rate, n_epochs, window_size,
-                          train_set_x, train_set_y,
-                          valid_set_x, valid_set_y,
-                          test_set_x, test_set_y,
-                          train_data, valid_data, test_data):
+                          datasets, output_folder):
     """
     Demonstrate stochastic gradient descent optimization of a log-linear
     model
@@ -198,10 +196,14 @@ def test_params(learning_rate, n_epochs, window_size,
 
     """
     
-    n_train_samples =  train_set_x.get_value(borrow=True).shape[0] - window_size + 1
-    
-    n_valid_samples = valid_set_x.get_value(borrow=True).shape[0] - window_size + 1
-    
+    # split the datasets
+    (train_set_x, train_set_y) = datasets[0]
+    (valid_set_x, valid_set_y) = datasets[1]
+    (test_set_x, test_set_y) = datasets[2]
+
+    # compute number of examples given in datasets
+    n_train_samples =  train_set_x.get_value(borrow=True).shape[0] - window_size + 1    
+    n_valid_samples = valid_set_x.get_value(borrow=True).shape[0] - window_size + 1    
     n_test_samples = test_set_x.get_value(borrow=True).shape[0] - window_size + 1
     
     
@@ -227,7 +229,6 @@ def test_params(learning_rate, n_epochs, window_size,
     # the model in symbolic format
     cost = classifier.negative_log_likelihood(y)
     predict = classifier.predict()
-    distribution = classifier.distribution()
 
     # compiling a Theano function that computes the mistakes that are made by
     # the model on a row
@@ -236,7 +237,7 @@ def test_params(learning_rate, n_epochs, window_size,
         outputs=[classifier.errors(y), predict, y],
         givens={
             x: test_set_x[index: index + window_size],
-            y: test_set_y[index]
+            y: test_set_y[index + window_size - 1]
         }
     )
 
@@ -245,7 +246,7 @@ def test_params(learning_rate, n_epochs, window_size,
         outputs=[classifier.errors(y), predict, y],
         givens={
             x: valid_set_x[index: index + window_size],
-            y: valid_set_y[index]
+            y: valid_set_y[index + window_size - 1]
         }
     )
 
@@ -268,7 +269,7 @@ def test_params(learning_rate, n_epochs, window_size,
         updates=updates,
         givens={
             x: train_set_x[index: index + window_size],
-            y: train_set_y[index]
+            y: train_set_y[index + window_size - 1]
         }
     )
     # end-snippet-3
@@ -307,11 +308,11 @@ def test_params(learning_rate, n_epochs, window_size,
             sample_cost, sample_error, cur_pred, cur_actual = train_model(index)
             # iteration number
             iter = epoch * n_train_samples + index
-            
+                
             cur_train_cost.append(sample_cost)
             cur_train_error.append(sample_error)
             train_confusion_matrix[cur_actual][cur_pred] += 1
-    
+        
             if (iter + 1) % validation_frequency == 0:
                 valid_confusion_matrix = zero_in_array(valid_confusion_matrix)
                 # compute zero-one loss on validation set
@@ -320,14 +321,14 @@ def test_params(learning_rate, n_epochs, window_size,
                     validation_loss, cur_pred, cur_actual = validate_model(i)
                     validation_losses.append(validation_loss)
                     valid_confusion_matrix[cur_actual][cur_pred] += 1
-
+    
                 this_validation_loss = float(numpy.mean(validation_losses))*100                 
                 valid_error_array.append([])
                 valid_error_array[-1].append(float(iter)/n_train_samples)
                 valid_error_array[-1].append(this_validation_loss)
-                    
+                        
                 print(
-                    'epoch %i, minibatch %i/%i, validation error %f %%' %
+                    'epoch %i, iter %i/%i, validation error %f %%' %
                     (
                         epoch,
                         index + 1,
@@ -335,30 +336,30 @@ def test_params(learning_rate, n_epochs, window_size,
                         this_validation_loss
                     )
                 )
-    
+       
                 # if we got the best validation score until now
                 if this_validation_loss < best_validation_loss:
                     #improve patience if loss improvement is good enough
                     if this_validation_loss < best_validation_loss *  \
-                       improvement_threshold:
+                        improvement_threshold:
                         patience = max(patience, iter * patience_increase)
-    
+        
                     best_validation_loss = this_validation_loss
                     # test it on the test set
-                       
+                         
                     test_result = [test_model(i)
                                    for i in xrange(n_test_samples)]
                     test_result = numpy.asarray(test_result)
                     test_losses = test_result[:,0]
                     test_score = float(numpy.mean(test_losses))*100
-                        
+                            
                     test_error_array.append([])
                     test_error_array[-1].append(float(iter)/n_train_samples)
                     test_error_array[-1].append(test_score)
-    
+        
                     print(
                         (
-                            '     epoch %i, minibatch %i/%i, test error of'
+                            '     epoch %i, iter %i/%i, test error of'
                             ' best model %f %%'
                         ) %
                         (
@@ -370,31 +371,29 @@ def test_params(learning_rate, n_epochs, window_size,
                     )
             if patience*4 <= iter:
                 done_looping = True
+                print('Done looping')
                 break
-                        
+                           
         train_cost_array.append([])
         train_cost_array[-1].append(float(iter)/n_train_samples)
         train_cost_array[-1].append(float(numpy.mean(cur_train_cost)))
         cur_train_cost =[]
-    
+       
         train_error_array.append([])
         train_error_array[-1].append(float(iter)/n_train_samples)
         train_error_array[-1].append(float(numpy.mean(cur_train_error)*100))
         cur_train_error =[]
-            
+                
         epoch = epoch + 1
+        gc.collect()
             
-    #except  Exception:
-    #    print('catch Exception')
-    
-    #finally:
     test_confusion_matrix = zero_in_array(numpy.zeros((7, 7)))
     test_losses = []
     for i in xrange(n_test_samples):
         test_loss, cur_pred, cur_actual = test_model(i)
         test_losses.append(test_loss)
         test_confusion_matrix[cur_actual][cur_pred] += 1
-
+    
     test_score = numpy.mean(test_losses)*100
     test_error_array.append([])
     test_error_array[-1].append(float(iter)/n_train_samples)
@@ -403,27 +402,27 @@ def test_params(learning_rate, n_epochs, window_size,
     visualize_costs(train_cost_array, train_error_array, 
                     valid_error_array, test_error_array,
                     window_size, learning_rate,
-                    train_data, valid_data, test_data)
+                    output_folder)
     end_time = time.clock()
     print(
         (
-            'Optimization complete with best validation score of %f %%,'
-            'with test performance %f %%'
+           'Optimization complete with best validation score of %f %%,'
+           'with test performance %f %%'
         )
         % (best_validation_loss, test_score)
     )
     print 'The code run for %d epochs, with %f epochs/sec' % (
         epoch, 1. * epoch / (end_time - start_time))
     print >> sys.stderr, ('The code for file ' +
-                          os.path.split(__file__)[1] +
-                          ' ran for %.1fs' % ((end_time - start_time)))
+                         os.path.split(__file__)[1] +
+                              ' ran for %.1fs' % ((end_time - start_time)))
     print(train_confusion_matrix, 'train_confusion_matrix')
     print(valid_confusion_matrix, 'valid_confusion_matrix')
     print(test_confusion_matrix, 'test_confusion_matrix')
     
 def test_all_params():
-    learning_rates = [0.001, 0.003, 0.005, 0.007, 0.009, 0.011, 0.013, 0.015]
-    window_sizes = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    learning_rates = [0.0001]
+    window_sizes = [13]
     
     train_data = ['p10a','p011','p013','p014','p020','p022','p040','p045','p048']
     valid_data = ['p09b','p023','p035','p038']
@@ -436,16 +435,17 @@ def test_all_params():
     valid_set_x, valid_set_y = valid_reader.read_all()
 
     test_reader = ICHISeqDataReader(test_data)
-    test_set_x, test_set_y = test_reader.read_all()   
+    test_set_x, test_set_y = test_reader.read_all()
+    
+    datasets = [(train_set_x, train_set_y), (valid_set_x, valid_set_y),
+            (test_set_x, test_set_y)]
+            
+    output_folder=('[%s], [%s], [%s]')%(",".join(train_data), ",".join(valid_data), ",".join(test_data))
     
     for lr in learning_rates:
         for ws in window_sizes:
-            test_params(learning_rate=lr, n_epochs=50, window_size = ws,
-                                  train_set_x=train_set_x, train_set_y=train_set_y,
-                                  valid_set_x=valid_set_x, valid_set_y=valid_set_y,
-                                  test_set_x=test_set_x, test_set_y=test_set_y,
-                                  train_data=train_data, valid_data=valid_data,
-                                  test_data=test_data)
+            test_params(learning_rate=lr, n_epochs=1000, window_size = ws,
+                                  datasets=datasets, output_folder=output_folder)
 
 if __name__ == '__main__':
     test_all_params()
