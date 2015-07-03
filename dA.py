@@ -43,11 +43,6 @@ from theano.tensor.shared_randomstreams import RandomStreams
 from ichi_seq_data_reader import ICHISeqDataReader
 from MyVisualizer import visualize_da
 
-try:
-    import PIL.Image as Image
-except ImportError:
-    import Image
-
 
 # start-snippet-1
 class dA(object):
@@ -61,7 +56,7 @@ class dA(object):
     def __init__(
         self,
         numpy_rng,
-        window_size,
+        n_visible,
         n_hidden,
         theano_rng=None,
         input=None,
@@ -115,7 +110,7 @@ class dA(object):
 
 
         """
-        self.n_visible = 3*window_size
+        self.n_visible = n_visible
         self.n_hidden = n_hidden
 
         # create a Theano random generator that gives symbolic random values
@@ -298,7 +293,7 @@ def train_dA(learning_rate, training_epochs, window_size, corruption_level, n_hi
         numpy_rng=rng,
         theano_rng=theano_rng,
         input=x,
-        window_size=window_size,
+        n_visible=window_size*3,
         n_hidden=n_hidden
     )
 

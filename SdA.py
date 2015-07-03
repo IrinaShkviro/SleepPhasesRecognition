@@ -30,7 +30,7 @@ from theano.tensor.shared_randomstreams import RandomStreams
 from logistic_sgd import LogisticRegression, zero_in_array
 from mlp import HiddenLayer
 from dA import dA
-from MyVisualizer import visualize_costs
+from MyVisualizer import visualize_pretraining, visualize_finetuning
 from ichi_seq_data_reader import ICHISeqDataReader
 
 # start-snippet-1
@@ -90,7 +90,7 @@ class SdA(object):
             theano_rng = RandomStreams(numpy_rng.randint(2 ** 30))
         # allocate symbolic variables for the data
         self.x = T.matrix('x')  # the data is presented as rasterized images
-        self.y = T.ivector('y')  # the labels are presented as 1D vector of
+        self.y = T.iscalar('y')  # the labels are presented as 1D vector of
                                  # [int] labels
         # end-snippet-1
 
@@ -295,7 +295,7 @@ class SdA(object):
         return train_fn, valid_score, test_score
 
 
-def test_SdA(datasets,output_folder, window_size,
+def test_SdA(datasets, output_folder, window_size,
              pretrain_lr=0.001, pretraining_epochs=15,
              finetune_lr=0.1, training_epochs=1000):
     """
@@ -356,15 +356,27 @@ def test_SdA(datasets,output_folder, window_size,
     ## Pre-train layer-wise
     corruption_levels = [.1, .2]
     for i in xrange(sda.n_layers):
+        train_cost_array = []
         # go through pretraining epochs
         for epoch in xrange(pretraining_epochs):
             # go through the training set
-            c = []
-            for batch_index in xrange(n_train_samples):
-                c.append(pretraining_fns[i](index=batch_index,
+            cur_train_cost = []
+            iter = 0
+            for index in xrange(n_train_samples):
+                cur_train_cost.append(pretraining_fns[i](index=index,
                          corruption=corruption_levels[i],
                          lr=pretrain_lr))
-            print 'Pre-training layer %i, epoch %d, cost %f' % (i, epoch, float(numpy.mean(c)))
+                         
+            train_cost_array.append([])
+            train_cost_array[-1].append(float(iter)/n_train_samples)
+            train_cost_array[-1].append(float(numpy.mean(cur_train_cost)))
+            
+            print 'Pre-training layer %i, epoch %d, cost %f' % (i, epoch, float(numpy.mean(cur_train_cost)))
+        
+        visualize_pretraining(train_cost=train_cost_array, window_size=window_size, 
+                              learning_rate=pretrain_lr, corruption_level=corruption_levels[i],
+                              n_hidden=sda.dA_layers[i].n_hidden, da_layer=i,
+                              datasets_folder=output_folder)
 
     end_time = timeit.default_timer()
 
@@ -376,7 +388,7 @@ def test_SdA(datasets,output_folder, window_size,
     # FINETUNING THE MODEL #
     ########################
 
-    # get the training, validation and testing function for the model
+    # get the training, validation and testing functions for the model
     print '... getting the finetuning functions'
     train_fn, validate_model, test_model = sda.build_finetune_functions(
         datasets=datasets,
@@ -495,10 +507,10 @@ def test_SdA(datasets,output_folder, window_size,
     test_error_array[-1].append(float(iter)/n_train_samples)
     test_error_array[-1].append(test_score)
     
-    visualize_costs(train_cost_array, train_error_array, 
-                    valid_error_array, test_error_array,
-                    window_size, learning_rate,
-                    output_folder)
+    visualize_finetuning(train_cost=train_cost_array, train_error=train_error_array, 
+                    valid_error=valid_error_array, test_error=test_error_array,
+                    window_size=window_size, learning_rate=finetune_lr,
+                    datasets_folder=output_folder)
                     
     print(train_confusion_matrix, 'train_confusion_matrix')    
 
@@ -516,7 +528,8 @@ def test_SdA(datasets,output_folder, window_size,
                           ' ran for %.2fm' % ((end_time - start_time) / 60.))
 
 def test_all_params():
-    learning_rates = [0.0001]
+    pretrain_learning_rates = [0.0001]
+    finetuning_learning_rates = [0.0001]
     window_sizes = [13]
     
     train_data = ['p10a','p011','p013','p014','p020','p022','p040','p045','p048']
@@ -530,16 +543,20 @@ def test_all_params():
     valid_set_x, valid_set_y = valid_reader.read_all()
 
     test_reader = ICHISeqDataReader(test_data)
-    test_set_x, test_set_y = test_reader.read_all()   
+    test_set_x, test_set_y = test_reader.read_all()
     
-    for lr in learning_rates:
-        for ws in window_sizes:
-            test_params(learning_rate=lr, n_epochs=1000, window_size = ws,
-                                  train_set_x=train_set_x, train_set_y=train_set_y,
-                                  valid_set_x=valid_set_x, valid_set_y=valid_set_y,
-                                  test_set_x=test_set_x, test_set_y=test_set_y,
-                                  train_data=train_data, valid_data=valid_data,
-                                  test_data=test_data)
+    datasets = [(train_set_x, train_set_y), (valid_set_x, valid_set_y),
+            (test_set_x, test_set_y)]
+
+    output_folder=('[%s], [%s], [%s]')%(",".join(train_data), ",".join(valid_data), ",".join(test_data))
+    
+    for plr in pretrain_learning_rates:
+        for flr in finetuning_learning_rates:
+            for ws in window_sizes:
+                test_SdA(datasets=datasets, output_folder=output_folder,
+                         window_size=ws,
+                         pretrain_lr=plr, pretraining_epochs=50,
+                         finetune_lr=flr, training_epochs=1000)
 
 if __name__ == '__main__':
-    test_SdA()
+    test_all_params()
