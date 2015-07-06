@@ -75,7 +75,23 @@ class LogisticRegression(object):
         """
         # start-snippet-1
         # initialize with 0 the weights W as a matrix of shape (n_in, n_out)
-        self.W = theano.shared(
+        # initialize theta = (W,b) with 0s; W gets the shape (n_in, n_out),
+        # while b is a vector of n_out elements, making theta a vector of
+        # n_in*n_out + n_out elements
+        self.theta = theano.shared(
+            value=numpy.zeros(
+                n_in * n_out + n_out,
+                dtype=theano.config.floatX
+            ),
+            name='theta',
+            borrow=True
+        )
+        # W is represented by the fisr n_in*n_out elements of theta
+        self.W = self.theta[0:n_in * n_out].reshape((n_in, n_out))
+        # b is the rest (last n_out elements)
+        self.b = self.theta[n_in * n_out:n_in * n_out + n_out]
+
+        """self.W = theano.shared(
             value=numpy.zeros(
                 (n_in, n_out),
                 dtype=theano.config.floatX
@@ -92,7 +108,7 @@ class LogisticRegression(object):
             ),
             name='b',
             borrow=True
-        )
+        )"""
 
         # symbolic expression for computing the matrix of class-membership
         # probabilities
@@ -112,6 +128,8 @@ class LogisticRegression(object):
 
         # parameters of the model
         self.params = [self.W, self.b]
+        
+        self.input = input.reshape((1,n_in))
         
     def print_log_reg_types(self):
         print(self.W.type(), 'W')
@@ -206,6 +224,8 @@ def test_params(learning_rate, n_epochs, window_size,
     n_valid_samples = valid_set_x.get_value(borrow=True).shape[0] - window_size + 1    
     n_test_samples = test_set_x.get_value(borrow=True).shape[0] - window_size + 1
     
+    n_in = window_size*3  # number of input units
+    n_out = 7  # number of output units
     
     ######################
     # BUILD ACTUAL MODEL #
@@ -222,7 +242,7 @@ def test_params(learning_rate, n_epochs, window_size,
 
     # construct the logistic regression class
     # Each ICHI input has size window_size*3
-    classifier = LogisticRegression(input=x, n_in=window_size*3, n_out=7)
+    classifier = LogisticRegression(input=x, n_in=n_in, n_out=n_out)
     classifier.print_log_reg_types()
 
     # the cost we minimize during training is the negative log likelihood of

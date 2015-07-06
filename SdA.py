@@ -239,40 +239,11 @@ class SdA(object):
         (test_set_x, test_set_y) = datasets[2]
 
         # compute number of examples for validation and testing
+        n_train_samples = train_set_x.get_value(borrow=True).shape[0] - window_size + 1       
         n_valid_samples = valid_set_x.get_value(borrow=True).shape[0] - window_size + 1       
         n_test_samples = test_set_x.get_value(borrow=True).shape[0] - window_size + 1
 
         index = T.lscalar('index')  # index to a sample
-
-        # compute the gradients with respect to the model parameters
-        gparams = T.grad(self.finetune_cost, self.params)
-
-        # compute list of fine-tuning updates
-        updates = [
-            (param, param - gparam * learning_rate)
-            for param, gparam in zip(self.params, gparams)
-        ]
-
-        train_fn = theano.function(
-            inputs=[index],
-            outputs=[self.finetune_cost, self.errors, self.predict, self.y],
-            updates=updates,
-            givens={
-                self.x: train_set_x[index: index + window_size],
-                self.y: train_set_y[index + window_size - 1]
-            },
-            name='train'
-        )
-
-        test_score_i = theano.function(
-            [index],
-            outputs=self.errors,
-            givens={
-                self.x: test_set_x[index: index + window_size],
-                self.y: test_set_y[index + window_size - 1]
-            },
-            name='test'
-        )
 
         valid_score_i = theano.function(
             [index],
@@ -283,6 +254,84 @@ class SdA(object):
             },
             name='valid'
         )
+        
+        test_score_i = theano.function(
+            [index],
+            outputs=self.errors,
+            givens={
+                self.x: test_set_x[index: index + window_size],
+                self.y: test_set_y[index + window_size - 1]
+            },
+            name='test'
+        )
+        
+        # compute the gradients with respect to the model parameters
+        gparams = T.grad(self.finetune_cost, self.params)
+
+        # compute list of fine-tuning updates
+        updates = [
+            (param, param - gparam * learning_rate)
+            for param, gparam in zip(self.params, gparams)
+        ]
+        
+        #  compile a theano function that returns the cost of a minibatch
+        window_cost = theano.function(
+            [index],
+            self.finetune_cost,
+            givens={
+                self.x: train_set_x[index: index + window_size],
+                self.y: train_set_y[index + window_size - 1]
+            },
+            name="batch_cost"
+        )
+    
+        # compile a theano function that returns the gradient
+        # with respect to theta
+        window_grad = theano.function(
+            [index],
+            T.grad(self.finetune_cost, self.logLayer.theta),
+            givens={
+                self.x: train_set_x[index: index + window_size],
+                self.y: train_set_y[index + window_size - 1]
+            },
+            name="batch_grad"
+        )
+        
+        # creates a function that computes the average cost on the training set
+        def train_fn(theta_value):
+            self.logLayer.theta.set_value(theta_value, borrow=True)
+            train_losses = [window_cost(i)
+                            for i in xrange(n_train_samples)]
+            return numpy.mean(train_losses)
+            
+        # creates a function that computes the average gradient of cost with
+        # respect to theta
+        def train_fn_grad(theta_value):
+            self.logLayer.theta.set_value(theta_value, borrow=True)
+            grad = window_grad(0)
+            for i in xrange(1, n_train_samples):
+                grad += window_grad(i)
+            return grad / n_train_samples
+            
+        self.validation_scores = [numpy.inf, 0]
+
+        # creates the validation function
+        def callback(theta_value):
+            self.logLayer.theta.set_value(theta_value, borrow=True)
+            #compute the validation loss
+            validation_losses = [valid_score_i(i)
+                                 for i in xrange(n_valid_samples)]
+            this_validation_loss = numpy.mean(validation_losses)
+            print('validation error %f %%' % (this_validation_loss * 100.,))
+    
+            # check if it is better then best validation score got until now
+            if this_validation_loss < self.validation_scores[0]:
+                # if so, replace the old one, and compute the score on the
+                # testing dataset
+                self.validation_scores[0] = this_validation_loss
+                test_losses = [test_score_i(i)
+                               for i in xrange(n_test_samples)]
+                self.validation_scores[1] = numpy.mean(test_losses)
 
         # Create a function that scans the entire validation set
         def valid_score():
@@ -292,7 +341,7 @@ class SdA(object):
         def test_score():
             return [test_score_i(i) for i in xrange(n_test_samples)]
 
-        return train_fn, valid_score, test_score
+        return train_fn, valid_score, test_score, train_fn_grad, callback
 
 
 def test_SdA(datasets, output_folder, window_size,
@@ -331,7 +380,9 @@ def test_SdA(datasets, output_folder, window_size,
 
     # compute number of examples given in training set
     n_train_samples =  train_set_x.get_value(borrow=True).shape[0] - window_size + 1    
- 
+    n_in = window_size*3  # number of input units
+    n_out = 7  # number of output units
+    
     # numpy random generator
     # start-snippet-3
     numpy_rng = numpy.random.RandomState(89677)
@@ -339,9 +390,9 @@ def test_SdA(datasets, output_folder, window_size,
     # construct the stacked denoising autoencoder class
     sda = SdA(
         numpy_rng=numpy_rng,
-        n_ins=3*window_size,
+        n_ins=n_in,
         hidden_layers_sizes=[window_size*2, window_size*2],
-        n_outs=7
+        n_outs=n_out
     )
     # end-snippet-3 start-snippet-4
     #########################
@@ -390,7 +441,7 @@ def test_SdA(datasets, output_folder, window_size,
 
     # get the training, validation and testing functions for the model
     print '... getting the finetuning functions'
-    train_fn, validate_model, test_model = sda.build_finetune_functions(
+    train_fn, validate_model, test_model, train_fn_grad, callback = sda.build_finetune_functions(
         datasets=datasets,
         window_size=window_size,
         learning_rate=finetune_lr
@@ -402,7 +453,7 @@ def test_SdA(datasets, output_folder, window_size,
     patience_increase = 25  # wait this much longer when a new best is                            # found
     improvement_threshold = 0.995  # a relative improvement of this much is
                                    # considered significant   
-    validation_frequency = patience / 4
+    validation_frequency = n_train_samples
                                   # go through this many
                                   # minibatche before checking the network
                                   # on the validation set; in this case we
@@ -410,7 +461,33 @@ def test_SdA(datasets, output_folder, window_size,
 
     best_validation_loss = numpy.inf
     test_score = 0.
+    # using scipy conjugate gradient optimizer
+    
+    import scipy.optimize
+    print ("Optimizing using scipy.optimize.fmin_cg...")
     start_time = timeit.default_timer()
+    best_w_b = scipy.optimize.fmin_cg(
+        f=train_fn,
+        x0=numpy.zeros((n_in + 1) * n_out, dtype=sda.x.dtype),
+        fprime=train_fn_grad,
+        callback=callback,
+        disp=0,
+        maxiter=training_epochs
+    )
+    
+    print(
+        (
+            'Optimization complete with best validation score of %f %%, with '
+            'test performance %f %%'
+        )
+        % (sda.validation_scores[0] * 100., sda.validation_scores[1] * 100.)
+    )
+
+    print >> sys.stderr, ('The code for file ' +
+                          os.path.split(__file__)[1] +
+                          ' ran for %.1fs' % ((end_time - start_time)))
+    
+    """start_time = timeit.default_timer()
 
     done_looping = False
     epoch = 0
@@ -525,7 +602,7 @@ def test_SdA(datasets, output_folder, window_size,
     )
     print >> sys.stderr, ('The training code for file ' +
                           os.path.split(__file__)[1] +
-                          ' ran for %.2fm' % ((end_time - start_time) / 60.))
+                          ' ran for %.2fm' % ((end_time - start_time) / 60.))"""
 
 def test_all_params():
     pretrain_learning_rates = [0.0001]
@@ -555,7 +632,7 @@ def test_all_params():
             for ws in window_sizes:
                 test_SdA(datasets=datasets, output_folder=output_folder,
                          window_size=ws,
-                         pretrain_lr=plr, pretraining_epochs=50,
+                         pretrain_lr=plr, pretraining_epochs=1,
                          finetune_lr=flr, training_epochs=1000)
 
 if __name__ == '__main__':
