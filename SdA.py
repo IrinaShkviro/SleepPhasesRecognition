@@ -361,14 +361,13 @@ def test_SdA(datasets, output_folder, window_size,
         for epoch in xrange(pretraining_epochs):
             # go through the training set
             cur_train_cost = []
-            iter = 0
             for index in xrange(n_train_samples):
                 cur_train_cost.append(pretraining_fns[i](index=index,
                          corruption=corruption_levels[i],
                          lr=pretrain_lr))
                          
             train_cost_array.append([])
-            train_cost_array[-1].append(float(iter)/n_train_samples)
+            train_cost_array[-1].append(epoch)
             train_cost_array[-1].append(float(numpy.mean(cur_train_cost)))
             
             print 'Pre-training layer %i, epoch %d, cost %f' % (i, epoch, float(numpy.mean(cur_train_cost)))
