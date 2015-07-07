@@ -95,11 +95,11 @@ class LogisticRegression(object):
         self.b = self.theta[n_in * n_out:n_in * n_out + n_out]
 
         # compute vector of class-membership probabilities in symbolic form
-        self.p_y_given_x = T.nnet.softmax(T.dot(self.input, self.W) + self.b)
+        self.p_y_given_x = T.flatten(T.nnet.softmax(T.dot(self.input, self.W) + self.b))
 
         # compute prediction as class whose probability is maximal in
         # symbolic form
-        self.y_pred = T.argmax(self.p_y_given_x, axis=1)
+        self.y_pred = T.argmax(self.p_y_given_x)
 
     def negative_log_likelihood(self, y):
         """Return the negative log-likelihood of the prediction of this model
@@ -133,6 +133,12 @@ class LogisticRegression(object):
             return T.neq(self.y_pred, y)
         else:
             raise NotImplementedError()
+
+    def predict(self):
+        """
+        Return predicted y
+        """
+        return self.y_pred
 
 
 def test_params(datasets, output_folder, window_size, n_epochs=50):
@@ -227,7 +233,7 @@ def test_params(datasets, output_folder, window_size, n_epochs=50):
     train_cost_array = []
     train_error_array = []
     train_confusion_matrix = numpy.zeros((7, 7))
-    epoch = 0
+    iter = 0
 
     # creates a function that computes the average cost on the training set
     def train_fn(theta_value):
@@ -242,14 +248,14 @@ def test_params(datasets, output_folder, window_size, n_epochs=50):
         
         this_train_loss = float(numpy.mean(cur_train_cost))  
         train_cost_array.append([])
-        train_cost_array[-1].append(epoch)
+        train_cost_array[-1].append(iter)
         train_cost_array[-1].append(this_train_loss)
        
         train_error_array.append([])
-        train_error_array[-1].append(epoch)
+        train_error_array[-1].append(iter)
         train_error_array[-1].append(float(numpy.mean(cur_train_error)*100))
                 
-        epoch += 1
+        iter += 1
         
         return this_train_loss
 
@@ -274,7 +280,9 @@ def test_params(datasets, output_folder, window_size, n_epochs=50):
                              for i in xrange(n_valid_samples)]
         this_validation_loss = numpy.mean(validation_losses) * 100.,
         print('validation error %f %%' % (this_validation_loss))
-        valid_error_array.append(this_validation_loss)
+        valid_error_array.append([])
+        valid_error_array[-1].append(iter)
+        valid_error_array[-1].append(this_validation_loss)
 
         # check if it is better then best validation score got until now
         if this_validation_loss < validation_scores[0]:
@@ -285,7 +293,7 @@ def test_params(datasets, output_folder, window_size, n_epochs=50):
                            for i in xrange(n_test_samples)]
             validation_scores[1] = numpy.mean(test_losses)
             test_error_array.append([])
-            test_error_array[-1].append(epoch)
+            test_error_array[-1].append(iter)
             test_error_array[-1].append(validation_scores[1])
 
     ###############
