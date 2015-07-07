@@ -100,6 +100,8 @@ class LogisticRegression(object):
         # compute prediction as class whose probability is maximal in
         # symbolic form
         self.y_pred = T.argmax(self.p_y_given_x)
+        
+        self.iter = 0
 
     def negative_log_likelihood(self, y):
         """Return the negative log-likelihood of the prediction of this model
@@ -233,7 +235,7 @@ def test_params(datasets, output_folder, window_size, n_epochs=50):
     train_cost_array = []
     train_error_array = []
     train_confusion_matrix = numpy.zeros((7, 7))
-    iter = 0
+    classifier.iter = 0
 
     # creates a function that computes the average cost on the training set
     def train_fn(theta_value):
@@ -248,14 +250,14 @@ def test_params(datasets, output_folder, window_size, n_epochs=50):
         
         this_train_loss = float(numpy.mean(cur_train_cost))  
         train_cost_array.append([])
-        train_cost_array[-1].append(iter)
+        train_cost_array[-1].append(classifier.iter)
         train_cost_array[-1].append(this_train_loss)
        
         train_error_array.append([])
-        train_error_array[-1].append(iter)
+        train_error_array[-1].append(classifier.iter)
         train_error_array[-1].append(float(numpy.mean(cur_train_error)*100))
                 
-        iter += 1
+        classifier.iter += 1
         
         return this_train_loss
 
