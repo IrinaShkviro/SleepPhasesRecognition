@@ -85,38 +85,32 @@ class LogisticRegression(object):
             name='theta',
             borrow=True
         )
+
+        # keep track of model input
+        self.input = input.reshape((1, n_in))
+
         # W is represented by the fisr n_in*n_out elements of theta
         self.W = self.theta[0:n_in * n_out].reshape((n_in, n_out))
         # b is the rest (last n_out elements)
         self.b = self.theta[n_in * n_out:n_in * n_out + n_out]
 
         # compute vector of class-membership probabilities in symbolic form
-        self.p_y_given_x = T.nnet.softmax(T.dot(input, self.W) + self.b)
+        self.p_y_given_x = T.nnet.softmax(T.dot(self.input, self.W) + self.b)
 
         # compute prediction as class whose probability is maximal in
         # symbolic form
         self.y_pred = T.argmax(self.p_y_given_x, axis=1)
 
-        # keep track of model input
-        self.input = input
-
     def negative_log_likelihood(self, y):
         """Return the negative log-likelihood of the prediction of this model
         under a given target distribution.
-
-        .. math::
-
-            \frac{1}{|\mathcal{D}|}\mathcal{L} (\theta=\{W,b\}, \mathcal{D}) =
-            \frac{1}{|\mathcal{D}|}\sum_{i=0}^{|\mathcal{D}|}
-                \log(P(Y=y^{(i)}|x^{(i)}, W,b)) \\
-            \ell (\theta=\{W,b\}, \mathcal{D})
 
         :type y: theano.tensor.TensorType
         :param y: corresponds to a vector that gives for each example the
                   correct label
         """
-        return -T.mean(T.log(self.p_y_given_x)[T.arange(y.shape[0]), y])
-
+        return -T.log(self.p_y_given_x)[y]
+       
     def errors(self, y):
         """Return a float representing the number of errors in the minibatch
         over the total number of examples of the minibatch

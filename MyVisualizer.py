@@ -108,7 +108,7 @@ def visualize_costs_cg(train_cost, train_error, valid_error, test_error,
             % (window_size)
         )
         plt.legend(loc='upper left')
-        plot_name = ('error WS %i.png')%(, window_size)
+        plot_name = ('error WS %i.png')%(window_size)
         plt.savefig(plot_name, dpi=200)
         plt.close()
         print('errors visualized')
