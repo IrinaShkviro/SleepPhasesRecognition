@@ -233,10 +233,9 @@ def test_params(learning_rate, n_epochs, window_size,
     print '... building the model'
 
     # allocate symbolic variables for the data
-    index = T.lscalar()  # index to a [mini]batch
+    index = T.lscalar()  
 
-    # generate symbolic variables for input (x and y represent a
-    # minibatch)
+    # generate symbolic variables for input
     x = T.matrix('x')  # data, presented as window with x, y, x for each sample
     y = T.iscalar('y')  # labels, presented as int label
 

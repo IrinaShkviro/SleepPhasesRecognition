@@ -448,21 +448,6 @@ def test_SdA(datasets, output_folder, window_size,
     )
 
     print '... finetunning the model'
-    # early-stopping parameters
-    patience = n_train_samples*2  # look as this many examples regardless
-    patience_increase = 25  # wait this much longer when a new best is                            # found
-    improvement_threshold = 0.995  # a relative improvement of this much is
-                                   # considered significant   
-    validation_frequency = n_train_samples
-                                  # go through this many
-                                  # minibatche before checking the network
-                                  # on the validation set; in this case we
-                                  # check every epoch
-
-    best_validation_loss = numpy.inf
-    test_score = 0.
-    # using scipy conjugate gradient optimizer
-    
     import scipy.optimize
     print ("Optimizing using scipy.optimize.fmin_cg...")
     start_time = timeit.default_timer()
