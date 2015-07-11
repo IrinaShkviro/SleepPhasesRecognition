@@ -95,7 +95,7 @@ class LogisticRegression(object):
         self.b = self.theta[n_in * n_out:n_in * n_out + n_out]
 
         # compute vector of class-membership probabilities in symbolic form
-        self.p_y_given_x = T.nnet.softmax(T.dot(self.input, self.W) + self.b)
+        self.p_y_given_x = T.flatten(T.nnet.softmax(T.dot(self.input, self.W) + self.b))
 
         # compute prediction as class whose probability is maximal in
         # symbolic form
@@ -113,8 +113,7 @@ class LogisticRegression(object):
         under a given target distribution.
 
         :type y: theano.tensor.TensorType
-        :param y: corresponds to a vector that gives for each example the
-                  correct label
+        :param y: corresponds to a scalar that gives the correct label
         """
         return -T.log(self.p_y_given_x)[y]
        
@@ -287,7 +286,9 @@ def test_params(datasets, output_folder, base_folder,
                              for i in xrange(n_valid_samples)]
         this_validation_loss = numpy.mean(validation_losses) * 100.,
         print('validation error %f %%' % (this_validation_loss))
-        classifier.valid_error_array.append(this_validation_loss)
+        classifier.valid_error_array.append([])
+        classifier.valid_error_array[-1].append(classifier.epoch)
+        classifier.valid_error_array[-1].append(this_validation_loss)
 
         # check if it is better then best validation score got until now
         if this_validation_loss < classifier.validation_scores[0]:
