@@ -359,12 +359,11 @@ def test_all_params():
             (test_set_x, test_set_y)]
             
     output_folder=('[%s], [%s], [%s]')%(",".join(train_data), ",".join(valid_data), ",".join(test_data))
-    base_folder='regression_cg_plots'
     
     for ws in window_sizes:
         test_params(datasets=datasets,
                     output_folder=output_folder,
-                    base_folder=base_folder,
+                    base_folder='regression_cg_plots',
                     window_size = ws,
                     n_epochs=1000)
 
