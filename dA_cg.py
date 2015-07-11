@@ -42,7 +42,7 @@ import theano.tensor as T
 from theano.tensor.shared_randomstreams import RandomStreams
 
 from ichi_seq_data_reader import ICHISeqDataReader
-from MyVisualizer import visualize_da_cg
+from MyVisualizer import visualize_da
 
 
 # start-snippet-1
@@ -162,6 +162,7 @@ class dA(object):
         self.params = [self.W, self.b, self.b_prime]
         
         self.epoch = 0
+        self.train_cost_array=[]
     # end-snippet-1
 
     def get_corrupted_input(self, input, corruption_level):
@@ -228,7 +229,7 @@ class dA(object):
         return self.x    
         
 def train_dA(training_epochs, window_size, corruption_level, n_hidden,
-             datasets, output_folder):
+             dataset, output_folder, base_folder):
 
     """
     This dA is tested on ICHI_Data
@@ -254,16 +255,6 @@ def train_dA(training_epochs, window_size, corruption_level, n_hidden,
 
     """
     
-    train_set = datasets[0]
-    valid_set = datasets[1]
-    test_set = datasets[2]    
-    
-    n_train_samples = train_set.get_value(borrow=True).shape[0] - window_size + 1
-
-    n_valid_samples = valid_set.get_value(borrow=True).shape[0] - window_size + 1
-       
-    n_test_samples = test_set.get_value(borrow=True).shape[0] - window_size + 1
-    
     # allocate symbolic variables for the data
     index = T.lscalar()    # index
     x = T.matrix('x')  # the data is presented as 3D vector
@@ -280,35 +271,19 @@ def train_dA(training_epochs, window_size, corruption_level, n_hidden,
         n_visible=n_visible,
         n_hidden=n_hidden
     )
+    
+    n_train_samples = dataset.get_value(borrow=True).shape[0] - window_size + 1
 
     cost = da.get_cost(
         corruption_level=corruption_level
     )
-        
-    validate_da = theano.function(
-        inputs=[index],
-        outputs=cost,
-        givens={
-            x: valid_set[index: index + window_size],
-        },
-        name="validate"
-    )
-        
-    test_da = theano.function(
-        inputs=[index],
-        outputs=cost,
-        givens={
-            x: test_set[index: index + window_size],
-        },
-        name="test"
-    )
-    
+           
     #  compile a theano function that returns the cost
     conj_cost = theano.function(
         inputs=[index],
         outputs=cost,
         givens={
-            x: train_set[index: index + window_size]
+            x: dataset[index: index + window_size]
         },
         name="conj_cost"
     )
@@ -318,12 +293,12 @@ def train_dA(training_epochs, window_size, corruption_level, n_hidden,
         [index],
         T.grad(cost, da.theta),
         givens={
-            x: train_set[index: index + window_size]
+            x: dataset[index: index + window_size]
         },
         name="conj_grad"
     )
     
-    train_cost_array = []
+    da.train_cost_array = []
     da.epoch = 0
 
     # creates a function that computes the average cost on the training set
@@ -333,9 +308,9 @@ def train_dA(training_epochs, window_size, corruption_level, n_hidden,
                         for i in xrange(n_train_samples)]
                             
         this_train_loss = float(numpy.mean(train_losses))  
-        train_cost_array.append([])
-        train_cost_array[-1].append(da.epoch)
-        train_cost_array[-1].append(this_train_loss)
+        da.train_cost_array.append([])
+        da.train_cost_array[-1].append(da.epoch)
+        da.train_cost_array[-1].append(this_train_loss)
         da.epoch += 1
         return this_train_loss
         
@@ -348,39 +323,11 @@ def train_dA(training_epochs, window_size, corruption_level, n_hidden,
             grad += conj_grad(i)
         return grad / n_train_samples
 
-    validation_scores = [numpy.inf, 0]
-    valid_cost_array = []
-    test_cost_array = []
-
-    # creates the validation function
-    def callback(theta_value):
-        da.theta.set_value(theta_value, borrow=True)
-        #compute the validation loss
-        validation_losses = [validate_da(i)
-                             for i in xrange(n_valid_samples)]
-        this_validation_loss = numpy.mean(validation_losses)
-        print('validation error %f %%' % (this_validation_loss * 100.,))
-        valid_cost_array.append([])
-        valid_cost_array[-1].append(da.epoch)
-        valid_cost_array[-1].append(this_validation_loss)
-        
-        # check if it is better then best validation score got until now
-        if this_validation_loss < validation_scores[0]:
-            # if so, replace the old one, and compute the score on the
-            # testing dataset
-            validation_scores[0] = this_validation_loss
-            test_losses = [test_da(i)
-                           for i in xrange(n_test_samples)]
-            validation_scores[1] = numpy.mean(test_losses)
-            test_cost_array.append([])
-            test_cost_array[-1].append(da.epoch)
-            test_cost_array[-1].append(validation_scores[1])
-
     ############
     # TRAINING #
     ############
 
-        # using scipy conjugate gradient optimizer
+    # using scipy conjugate gradient optimizer
     import scipy.optimize
     print ("Optimizing using scipy.optimize.fmin_cg...")
     start_time = timeit.default_timer()
@@ -388,50 +335,45 @@ def train_dA(training_epochs, window_size, corruption_level, n_hidden,
         f=train_fn,
         x0=numpy.zeros((n_visible + 1) * n_hidden, dtype=x.dtype),
         fprime=train_fn_grad,
-        callback=callback,
         disp=0,
         maxiter=training_epochs
     )
     end_time = timeit.default_timer()
     print(
-        (
-            'Optimization complete with best validation score of %f %%, with '
-            'test performance %f %%'
-        )
-        % (validation_scores[0] * 100., validation_scores[1] * 100.)
+            'Optimization complete'
     )
 
     print >> sys.stderr, ('The code for file ' +
                           os.path.split(__file__)[1] +
                           ' ran for %.1fs' % ((end_time - start_time)))                 
     
-    visualize_da_cg(train_cost_array, valid_cost_array, test_cost_array,
-                 window_size, corruption_level, n_hidden, output_folder)
+    visualize_da(train_cost=da.train_cost_array,
+                 window_size=window_size,
+                 learning_rate=0,
+                 corruption_level=corruption_level,
+                 n_hidden=n_hidden,
+                 output_folder=output_folder,
+                 base_folder=base_folder)
     
 def test_da_params(corruption_level):
     window_sizes = [13, 30, 50, 75, 100]
     
     train_data = ['p10a','p011','p013','p014','p020','p022','p040','p045','p048']
-    valid_data = ['p09b','p023','p035','p038']
-    test_data = ['p09a','p033']
     
     train_reader = ICHISeqDataReader(train_data)
     train_set, train_labels = train_reader.read_all()
     
-    valid_reader = ICHISeqDataReader(valid_data)
-    valid_set, valid_labels = valid_reader.read_all()
-
-    test_reader = ICHISeqDataReader(test_data)
-    test_set, test_labels = test_reader.read_all()
-    
-    datasets = [train_set, valid_set, test_set]
-    
-    output_folder=('[%s], [%s], [%s]')%(",".join(train_data), ",".join(valid_data), ",".join(test_data))
+    output_folder=('[%s]')%(",".join(train_data))
+    base_folder='dA_plots'
     
     for ws in window_sizes:
-        train_dA(training_epochs=1, window_size = ws, 
-                 corruption_level=corruption_level, n_hidden=ws*2,
-                 datasets=datasets, output_folder=output_folder)
+        train_dA(training_epochs=1,
+                 window_size = ws, 
+                 corruption_level=corruption_level,
+                 n_hidden=ws*2,
+                 dataset=train_set,
+                 output_folder=output_folder,
+                 base_folder=base_folder)
 
 
 if __name__ == '__main__':

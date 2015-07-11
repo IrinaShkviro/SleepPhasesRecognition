@@ -44,7 +44,7 @@ import numpy
 import theano
 import theano.tensor as T
 
-from MyVisualizer import visualize_costs
+from MyVisualizer import visualize_logistic
 from ichi_seq_data_reader import ICHISeqDataReader
 
 
@@ -179,8 +179,12 @@ class LogisticRegression(object):
 def zero_in_array(array):
     return [[0 for col in range(7)] for row in range(7)]
 
-def test_params(learning_rate, n_epochs, window_size,
-                          datasets, output_folder):
+def test_params(learning_rate,
+                n_epochs,
+                window_size,
+                datasets,
+                output_folder,
+                base_folder):
     """
     Demonstrate stochastic gradient descent optimization of a log-linear
     model
@@ -399,10 +403,14 @@ def test_params(learning_rate, n_epochs, window_size,
     test_error_array[-1].append(float(iter)/n_train_samples)
     test_error_array[-1].append(test_score)
     
-    visualize_costs(train_cost_array, train_error_array, 
-                    valid_error_array, test_error_array,
-                    window_size, learning_rate,
-                    output_folder)
+    visualize_logistic(train_cost=train_cost_array,
+                    train_error=train_error_array, 
+                    valid_error=valid_error_array,
+                    test_error=test_error_array,
+                    window_size=window_size,
+                    learning_rate=learning_rate,
+                    output_folder=output_folder,
+                    base_folder=base_folder)
     end_time = time.clock()
     print(
         (
@@ -441,11 +449,15 @@ def test_all_params():
             (test_set_x, test_set_y)]
             
     output_folder=('[%s], [%s], [%s]')%(",".join(train_data), ",".join(valid_data), ",".join(test_data))
-    
+    base_folder='regression_plots'
     for lr in learning_rates:
         for ws in window_sizes:
-            test_params(learning_rate=lr, n_epochs=1000, window_size = ws,
-                                  datasets=datasets, output_folder=output_folder)
+            test_params(learning_rate=lr,
+                        n_epochs=1000,
+                        window_size = ws,
+                        datasets=datasets,
+                        output_folder=output_folder,
+                        base_folder=base_folder)
 
 if __name__ == '__main__':
     test_all_params()

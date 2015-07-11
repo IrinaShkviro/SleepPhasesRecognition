@@ -242,7 +242,7 @@ class dA(object):
         return self.x    
         
 def train_dA(learning_rate, training_epochs, window_size, corruption_level, n_hidden,
-             datasets, output_folder):
+             datasets, output_folder, base_folder):
 
     """
     This dA is tested on ICHI_Data
@@ -432,9 +432,13 @@ def train_dA(learning_rate, training_epochs, window_size, corruption_level, n_hi
     test_cost_array[-1].append(float(iter)/n_train_samples)
     test_cost_array[-1].append(test_cost)                   
     
-    visualize_da(train_cost_array, valid_cost_array, test_cost_array,
-                 window_size, learning_rate, corruption_level, n_hidden,
-                 output_folder)
+    visualize_da(train_cost=train_cost_array,
+                 window_size=window_size,
+                 learning_rate=learning_rate,
+                 corruption_level=corruption_level,
+                 n_hidden=n_hidden,
+                 output_folder=output_folder,
+                 base_folder=base_folder)
     
     end_time = time.clock()
     training_time = (end_time - start_time)
@@ -463,12 +467,18 @@ def test_da_params(corruption_level):
     datasets = [train_set, valid_set, test_set]
     
     output_folder=('[%s], [%s], [%s]')%(",".join(train_data), ",".join(valid_data), ",".join(test_data))
+    base_folder='dA__cg_plots'
     
     for lr in learning_rates:
         for ws in window_sizes:
-            train_dA(learning_rate=lr, training_epochs=1, window_size = ws, 
-                     corruption_level=corruption_level, n_hidden=ws*2,
-                     datasets=datasets, output_folder=output_folder)
+            train_dA(learning_rate=lr,
+                     training_epochs=1,
+                     window_size = ws, 
+                     corruption_level=corruption_level,
+                     n_hidden=ws*2,
+                     datasets=datasets,
+                     output_folder=output_folder,
+                     base_folder=base_folder)
 
 
 if __name__ == '__main__':

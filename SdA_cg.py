@@ -27,9 +27,9 @@ import theano
 import theano.tensor as T
 from theano.tensor.shared_randomstreams import RandomStreams
 
-from logistic_sgd import LogisticRegression, zero_in_array
+from logistic_sgd_cg import LogisticRegression, zero_in_array
 from mlp import HiddenLayer
-from dA import dA
+from dA_cg import dA
 from MyVisualizer import visualize_pretraining, visualize_finetuning
 from ichi_seq_data_reader import ICHISeqDataReader
 
@@ -170,9 +170,9 @@ class SdA(object):
     def pretraining_functions(self, train_set_x, window_size):
         ''' Generates a list of functions, each of them implementing one
         step in trainnig the dA corresponding to the layer with same index.
-        The function will require as input the minibatch index, and to train
+        The function will require as input the index, and to train
         a dA you just need to iterate, calling the corresponding function on
-        all minibatch indexes.
+        all indexes.
 
         :type train_set_x: theano.tensor.TensorType
         :param train_set_x: Shared variable that contains all datapoints used
@@ -180,41 +180,71 @@ class SdA(object):
 
         :type window_size: int
         :param window_size: size of a window
-
-        :type learning_rate: float
-        :param learning_rate: learning rate used during training for any of
-                              the dA layers
         '''
 
-        # index to a [mini]batch
-        index = T.lscalar('index')  # index to a minibatch
+        # index
+        index = T.lscalar('index')
+        x = T.matrix('x')  # the data is presented as 3D vector
         corruption_level = T.scalar('corruption')  # % of corruption to use
-        learning_rate = T.scalar('lr')  # learning rate to use
+        n_train_samples = train_set_x.get_value(borrow=True).shape[0] - window_size + 1       
 
         pretrain_fns = []
+        pretrain_updates = []
         for cur_dA in self.dA_layers:
             # get the cost and the updates list
-            cost, updates = cur_dA.get_cost_updates(corruption_level,
-                                                learning_rate)
-            # compile the theano function
-            fn = theano.function(
-                inputs=[
-                    index,
-                    theano.Param(corruption_level, default=0.2),
-                    theano.Param(learning_rate, default=0.1)
-                ],
+            cost = cur_dA.get_cost(corruption_level)
+
+            # compile a theano function that returns the cost
+            conj_cost = theano.function(
+                inputs=[index],
                 outputs=cost,
-                updates=updates,
                 givens={
-                    self.x: train_set_x[index: index + window_size]
-                }
+                    x: train_set_x[index: index + window_size]
+                },
+                name="conj_cost"
             )
+        
+            # compile a theano function that returns the gradient with respect to theta
+            conj_grad = theano.function(
+                [index],
+                T.grad(cost, cur_dA.theta),
+                givens={
+                    x: train_set_x[index: index + window_size]
+                },
+                name="conj_grad"
+            )
+            
+            cur_dA.train_cost_array = []
+            cur_dA.epoch = 0
+           
+            # creates a function that computes the average cost on the training set
+            def train_fn(theta_value):
+                cur_dA.theta.set_value(theta_value, borrow=True)
+                train_losses = [conj_cost(i) for i in xrange(n_train_samples)]
+                                        
+                this_train_loss = float(numpy.mean(train_losses))  
+                cur_dA.train_cost_array.append([])
+                cur_dA.train_cost_array[-1].append(cur_dA.epoch)
+                cur_dA.train_cost_array[-1].append(this_train_loss)
+                cur_dA.epoch += 1
+                return this_train_loss
+                    
+            # creates a function that computes the average gradient of cost with
+            # respect to theta
+            def train_fn_grad(theta_value):
+                cur_dA.theta.set_value(theta_value, borrow=True)
+                grad = conj_grad(0)
+                for i in xrange(1, cur_dA.n_train_samples):
+                    grad += conj_grad(i)
+                return grad / cur_dA.n_train_samples
+                            
             # append `fn` to the list of functions
-            pretrain_fns.append(fn)
+            pretrain_fns.append(train_fn)
+            pretrain_updates.append(train_fn_grad)
 
-        return pretrain_fns
+        return pretrain_fns, pretrain_updates
 
-    def build_finetune_functions(self, datasets, window_size, learning_rate):
+    def build_finetune_functions(self, datasets, window_size):
         '''Generates a function `train` that implements one step of
         finetuning, a function `validate` that computes the error on
         a batch from the validation set, and a function `test` that
@@ -227,11 +257,8 @@ class SdA(object):
                          is formed of two Theano variables, one for the
                          datapoints, the other for the labels
 
-        :type batch_size: int
-        :param batch_size: size of a minibatch
-
-        :type learning_rate: float
-        :param learning_rate: learning rate used during finetune stage
+        :type window_size: int
+        :param window_size: size of window
         '''
 
         (train_set_x, train_set_y) = datasets[0]
@@ -244,123 +271,124 @@ class SdA(object):
         n_test_samples = test_set_x.get_value(borrow=True).shape[0] - window_size + 1
 
         index = T.lscalar('index')  # index to a sample
+        x = T.matrix('x')  # data, presented as window with x, y, x for each sample
+        y = T.iscalar('y')  # labels, presented as int label
 
-        valid_score_i = theano.function(
+        validate_model = theano.function(
             [index],
             outputs=self.errors,
             givens={
-                self.x: valid_set_x[index: index + window_size],
-                self.y: valid_set_y[index + window_size - 1]
+                x: valid_set_x[index: index + window_size],
+                y: valid_set_y[index + window_size - 1]
             },
             name='valid'
         )
         
-        test_score_i = theano.function(
+        test_model = theano.function(
             [index],
             outputs=self.errors,
             givens={
-                self.x: test_set_x[index: index + window_size],
-                self.y: test_set_y[index + window_size - 1]
+                x: test_set_x[index: index + window_size],
+                y: test_set_y[index + window_size - 1]
             },
             name='test'
         )
-        
-        # compute the gradients with respect to the model parameters
-        gparams = T.grad(self.finetune_cost, self.params)
-
-        # compute list of fine-tuning updates
-        updates = [
-            (param, param - gparam * learning_rate)
-            for param, gparam in zip(self.params, gparams)
-        ]
-        
+            
         #  compile a theano function that returns the cost of a minibatch
-        window_cost = theano.function(
+        conj_cost = theano.function(
             [index],
-            self.finetune_cost,
+            outputs=self.finetune_cost,
             givens={
-                self.x: train_set_x[index: index + window_size],
-                self.y: train_set_y[index + window_size - 1]
+                x: train_set_x[index: index + window_size],
+                y: train_set_y[index + window_size - 1]
             },
-            name="batch_cost"
-        )
-    
-        # compile a theano function that returns the gradient
-        # with respect to theta
-        window_grad = theano.function(
-            [index],
-            T.grad(self.finetune_cost, self.logLayer.theta),
-            givens={
-                self.x: train_set_x[index: index + window_size],
-                self.y: train_set_y[index + window_size - 1]
-            },
-            name="batch_grad"
+            name="conj_cost"
         )
         
+        # compile a theano function that returns the gradient with respect to theta
+        conj_grad = theano.function(
+            [index],
+            outputs=T.grad(self.finetune_cost, self.logLayer.theta),
+            givens={
+                x: train_set_x[index: index + window_size],
+                y: train_set_y[index + window_size - 1]
+            },
+            name="conj_grad"
+        )
+        
+        self.logLayer.train_cost_array = []
+        self.logLayer.train_error_array = []
+        self.logLayer.epoch = 0
+       
         # creates a function that computes the average cost on the training set
         def train_fn(theta_value):
             self.logLayer.theta.set_value(theta_value, borrow=True)
-            train_losses = [window_cost(i)
-                            for i in xrange(n_train_samples)]
-            return numpy.mean(train_losses)
+            cur_train_cost = []
+            cur_train_error =[]
+            for i in xrange(n_train_samples):
+                sample_cost, sample_error, cur_pred, cur_actual = conj_cost(i)
+                cur_train_cost.append(sample_cost)
+                cur_train_error.append(sample_error)
             
+            this_train_loss = float(numpy.mean(cur_train_cost))  
+            self.logLayer.train_cost_array.append([])
+            self.logLayer.train_cost_array[-1].append(self.logLayer.epoch)
+            self.logLayer.train_cost_array[-1].append(this_train_loss)
+           
+            self.logLayer.train_error_array.append([])
+            self.logLayer.train_error_array[-1].append(self.logLayer.epoch)
+            self.logLayer.train_error_array[-1].append(float(numpy.mean(cur_train_error)*100))
+                    
+            self.logLayer.epoch += 1
+            
+            return this_train_loss
+
         # creates a function that computes the average gradient of cost with
         # respect to theta
         def train_fn_grad(theta_value):
             self.logLayer.theta.set_value(theta_value, borrow=True)
-            grad = window_grad(0)
+            grad = conj_grad(0)
             for i in xrange(1, n_train_samples):
-                grad += window_grad(i)
+                grad += conj_grad(i)
             return grad / n_train_samples
-            
-        self.validation_scores = [numpy.inf, 0]
+
+        self.logLayer.validation_scores = [numpy.inf, 0]
+        self.logLayer.valid_error_array = []
+        self.logLayer.test_error_array = []
 
         # creates the validation function
         def callback(theta_value):
             self.logLayer.theta.set_value(theta_value, borrow=True)
             #compute the validation loss
-            validation_losses = [valid_score_i(i)
+            validation_losses = [validate_model(i)
                                  for i in xrange(n_valid_samples)]
             this_validation_loss = numpy.mean(validation_losses)
             print('validation error %f %%' % (this_validation_loss * 100.,))
     
             # check if it is better then best validation score got until now
-            if this_validation_loss < self.validation_scores[0]:
+            if this_validation_loss < self.logLayer.validation_scores[0]:
                 # if so, replace the old one, and compute the score on the
                 # testing dataset
-                self.validation_scores[0] = this_validation_loss
-                test_losses = [test_score_i(i)
+                self.logLayer.validation_scores[0] = this_validation_loss
+                test_losses = [test_model(i)
                                for i in xrange(n_test_samples)]
-                self.validation_scores[1] = numpy.mean(test_losses)
+                self.logLayer.validation_scores[1] = numpy.mean(test_losses)
 
-        # Create a function that scans the entire validation set
-        def valid_score():
-            return [valid_score_i(i) for i in xrange(n_valid_samples)]
-
-        # Create a function that scans the entire test set
-        def test_score():
-            return [test_score_i(i) for i in xrange(n_test_samples)]
-
-        return train_fn, valid_score, test_score, train_fn_grad, callback
+        return train_fn, train_fn_grad, callback
 
 
-def test_SdA(datasets, output_folder, window_size,
-             pretrain_lr=0.001, pretraining_epochs=15,
-             finetune_lr=0.1, training_epochs=1000):
+def test_SdA(datasets,
+             output_folder, base_folder,
+             window_size,
+             pretraining_epochs=15,
+             training_epochs=1000):
     """
     Demonstrates how to train and test a stochastic denoising autoencoder.
 
-    This is demonstrated on MNIST.
-
-    :type learning_rate: float
-    :param learning_rate: learning rate used in the finetune stage
-    (factor for the stochastic gradient)
+    This is demonstrated on ICHI.
 
     :type pretraining_epochs: int
     :param pretraining_epochs: number of epoch to do pretraining
-
-    :type pretrain_lr: float
-    :param pretrain_lr: learning rate to be used during pretraining
 
     :type n_iter: int
     :param n_iter: maximal number of iterations ot run the optimizer
@@ -379,9 +407,9 @@ def test_SdA(datasets, output_folder, window_size,
     (test_set_x, test_set_y) = datasets[2]
 
     # compute number of examples given in training set
-    n_train_samples =  train_set_x.get_value(borrow=True).shape[0] - window_size + 1    
     n_in = window_size*3  # number of input units
     n_out = 7  # number of output units
+    x = T.matrix('x')
     
     # numpy random generator
     # start-snippet-3
@@ -399,35 +427,35 @@ def test_SdA(datasets, output_folder, window_size,
     # PRETRAINING THE MODEL #
     #########################
     print '... getting the pretraining functions'
-    pretraining_fns = sda.pretraining_functions(train_set_x=train_set_x,
+    pretraining_fns, pretraining_updates = sda.pretraining_functions(train_set_x=train_set_x,
                                                 window_size=window_size)
 
     print '... pre-training the model'
+    # using scipy conjugate gradient optimizer
+    import scipy.optimize
+    print ("Optimizing using scipy.optimize.fmin_cg...")
+
     start_time = timeit.default_timer()
+    
     ## Pre-train layer-wise
     corruption_levels = [.1, .2]
     for i in xrange(sda.n_layers):
-        train_cost_array = []
-        # go through pretraining epochs
-        for epoch in xrange(pretraining_epochs):
-            # go through the training set
-            cur_train_cost = []
-            iter = 0
-            for index in xrange(n_train_samples):
-                cur_train_cost.append(pretraining_fns[i](index=index,
-                         corruption=corruption_levels[i],
-                         lr=pretrain_lr))
-                         
-            train_cost_array.append([])
-            train_cost_array[-1].append(float(iter)/n_train_samples)
-            train_cost_array[-1].append(float(numpy.mean(cur_train_cost)))
-            
-            print 'Pre-training layer %i, epoch %d, cost %f' % (i, epoch, float(numpy.mean(cur_train_cost)))
-        
-        visualize_pretraining(train_cost=train_cost_array, window_size=window_size, 
-                              learning_rate=pretrain_lr, corruption_level=corruption_levels[i],
-                              n_hidden=sda.dA_layers[i].n_hidden, da_layer=i,
-                              datasets_folder=output_folder)
+        best_w_b = scipy.optimize.fmin_cg(
+            f=pretraining_fns[i],
+            x0=numpy.zeros((sda.dA_layers[i].n_visible + 1) * sda.dA_layers[i].n_hidden,
+                           dtype=x.dtype),
+            fprime=pretraining_updates[i],
+            disp=0,
+            maxiter=pretraining_epochs
+        )
+        visualize_pretraining(train_cost=sda.dA_layers[i].train_cost_array,
+                              window_size=window_size,
+                              learning_rate=0,
+                              corruption_level=corruption_levels[i],
+                              n_hidden=sda.dA_layers[i].n_hidden,
+                              da_layer=i,
+                              datasets_folder=output_folder,
+                              base_folder=base_folder)
 
     end_time = timeit.default_timer()
 
@@ -441,10 +469,9 @@ def test_SdA(datasets, output_folder, window_size,
 
     # get the training, validation and testing functions for the model
     print '... getting the finetuning functions'
-    train_fn, validate_model, test_model, train_fn_grad, callback = sda.build_finetune_functions(
+    train_fn, train_fn_grad, callback = sda.build_finetune_functions(
         datasets=datasets,
-        window_size=window_size,
-        learning_rate=finetune_lr
+        window_size=window_size
     )
 
     print '... finetunning the model'
@@ -467,131 +494,21 @@ def test_SdA(datasets, output_folder, window_size,
         )
         % (sda.validation_scores[0] * 100., sda.validation_scores[1] * 100.)
     )
-
+    
+    visualize_finetuning(train_cost=sda.logLayer.train_cost_array,
+                         train_error=sda.logLayer.train_error_array,
+                         valid_error=sda.logLayer.valid_error_array,
+                         test_error=sda.logLayer.test_error_array,
+                         window_size=window_size,
+                         learning_rate=0,
+                         datasets_folder=output_folder,
+                         base_folder=base_folder)
+    
     print >> sys.stderr, ('The code for file ' +
                           os.path.split(__file__)[1] +
                           ' ran for %.1fs' % ((end_time - start_time)))
-    
-    """start_time = timeit.default_timer()
-
-    done_looping = False
-    epoch = 0
-    iter = 0
-    train_cost_array = []
-    train_error_array = []
-    valid_error_array = []
-    test_error_array = []
-    cur_train_cost =[]
-    cur_train_error = []
-    train_confusion_matrix = numpy.zeros((7, 7))
-    print(n_train_samples, 'train_samples')
-    
-    while (epoch < training_epochs) and (not done_looping):
-        train_confusion_matrix = zero_in_array(train_confusion_matrix)
-        for index in xrange(n_train_samples):          
-            sample_cost, sample_error, cur_pred, cur_actual = train_fn(index)
-            # iteration number
-            iter = epoch * n_train_samples + index
-                
-            cur_train_cost.append(sample_cost)
-            cur_train_error.append(sample_error)
-            train_confusion_matrix[cur_actual][cur_pred] += 1
-
-            if (iter + 1) % validation_frequency == 0:
-                validation_losses = validate_model()
-                this_validation_loss = float(numpy.mean(validation_losses))*100                 
-                valid_error_array.append([])
-                valid_error_array[-1].append(float(iter)/n_train_samples)
-                valid_error_array[-1].append(this_validation_loss)
-                        
-                print(
-                    'epoch %i, iter %i/%i, validation error %f %%' %
-                    (
-                        epoch,
-                        index + 1,
-                        n_train_samples,
-                        this_validation_loss
-                    )
-                )
-                
-                # if we got the best validation score until now
-                if this_validation_loss < best_validation_loss:
-
-                    #improve patience if loss improvement is good enough
-                    if this_validation_loss < best_validation_loss * \
-                        improvement_threshold:
-                        patience = max(patience, iter * patience_increase)
-
-                    # save best validation score and iteration number
-                    best_validation_loss = this_validation_loss
-                    best_iter = iter
-
-                    # test it on the test set
-                    test_losses = test_model()
-                    test_score = float(numpy.mean(test_losses))*100                           
-                    test_error_array.append([])
-                    test_error_array[-1].append(float(iter)/n_train_samples)
-                    test_error_array[-1].append(test_score)
-        
-                    print(
-                        (
-                            '     epoch %i, iter %i/%i, test error of'
-                            ' best model %f %%'
-                        ) %
-                        (
-                            epoch,
-                            index + 1,
-                            n_train_samples,
-                            test_score
-                        )
-                    )
-            if patience*4 <= iter:
-                done_looping = True
-                print('Done looping')
-                break
-                           
-        train_cost_array.append([])
-        train_cost_array[-1].append(float(iter)/n_train_samples)
-        train_cost_array[-1].append(float(numpy.mean(cur_train_cost)))
-        cur_train_cost =[]
-       
-        train_error_array.append([])
-        train_error_array[-1].append(float(iter)/n_train_samples)
-        train_error_array[-1].append(float(numpy.mean(cur_train_error)*100))
-        cur_train_error =[]
-                
-        epoch = epoch + 1
-        gc.collect()
-            
-    test_losses = test_model()
-    test_score = float(numpy.mean(test_losses))*100                           
-    test_error_array.append([])
-    test_error_array[-1].append(float(iter)/n_train_samples)
-    test_error_array[-1].append(test_score)
-    
-    visualize_finetuning(train_cost=train_cost_array, train_error=train_error_array, 
-                    valid_error=valid_error_array, test_error=test_error_array,
-                    window_size=window_size, learning_rate=finetune_lr,
-                    datasets_folder=output_folder)
-                    
-    print(train_confusion_matrix, 'train_confusion_matrix')    
-
-    end_time = timeit.default_timer()
-    print(
-        (
-            'Optimization complete with best validation score of %f %%, '
-            'on iteration %i, '
-            'with test performance %f %%'
-        )
-        % (best_validation_loss, best_iter + 1, test_score)
-    )
-    print >> sys.stderr, ('The training code for file ' +
-                          os.path.split(__file__)[1] +
-                          ' ran for %.2fm' % ((end_time - start_time) / 60.))"""
 
 def test_all_params():
-    pretrain_learning_rates = [0.0001]
-    finetuning_learning_rates = [0.0001]
     window_sizes = [13]
     
     train_data = ['p10a','p011','p013','p014','p020','p022','p040','p045','p048']
@@ -612,13 +529,13 @@ def test_all_params():
 
     output_folder=('[%s], [%s], [%s]')%(",".join(train_data), ",".join(valid_data), ",".join(test_data))
     
-    for plr in pretrain_learning_rates:
-        for flr in finetuning_learning_rates:
-            for ws in window_sizes:
-                test_SdA(datasets=datasets, output_folder=output_folder,
-                         window_size=ws,
-                         pretrain_lr=plr, pretraining_epochs=1,
-                         finetune_lr=flr, training_epochs=1000)
+    for ws in window_sizes:
+        test_SdA(datasets=datasets,
+                 output_folder=output_folder,
+                 base_folder='SdA_cg_plots',
+                 window_size=ws,
+                 pretraining_epochs=1,
+                 training_epochs=1000)
 
 if __name__ == '__main__':
     test_all_params()

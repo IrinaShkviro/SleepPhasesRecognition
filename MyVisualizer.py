@@ -10,11 +10,9 @@ import os
 import numpy
 import matplotlib.pyplot as plt
 
-def visualize_costs(train_cost, train_error, valid_error, test_error, 
-                    window_size, learning_rate, output_folder):
+def visualize_logistic(train_cost, train_error, valid_error, test_error, 
+                    window_size, learning_rate, output_folder, base_folder):
         print "Visualizer visualize_costs"
-        
-        base_folder='regression_plots'
         
         if not os.path.isdir(base_folder):
             os.makedirs(base_folder)
@@ -71,75 +69,11 @@ def visualize_costs(train_cost, train_error, valid_error, test_error,
         
         os.chdir('../')
         os.chdir('../')
-
-def visualize_costs_cg(train_cost, train_error, valid_error, test_error, 
-                    window_size, output_folder):
+        
+def visualize_da(train_cost, window_size, learning_rate,
+                 corruption_level, n_hidden, output_folder, base_folder):
         print "Visualizer visualize_costs"
         
-        base_folder='regression_plots_cg'
-        
-        if not os.path.isdir(base_folder):
-            os.makedirs(base_folder)
-        os.chdir(base_folder)
-                
-        if not os.path.isdir(output_folder):
-            os.makedirs(output_folder)
-        os.chdir(output_folder)
-        print('Set output')
-                        
-        train_cost=numpy.asarray(train_cost)
-        train_error=numpy.asarray(train_error)
-        valid_error=numpy.asarray(valid_error)
-        test_error=numpy.asarray(test_error)
-        print('converted to arrays')
-                
-        # print errors
-        plt.figure(1)
-        plt.plot(train_error[:, 0],train_error[:,1],label='train_error')
-        plt.plot(valid_error[:, 0],valid_error[:,1],label='valid_error')
-        plt.plot(test_error[:, 0],test_error[:,1],label='test_error')
-        print('plots created, start decor')        
-        
-        # decorative part       
-        plt.xlabel('epochs')
-        plt.ylabel('error(%)')
-        plt.title(
-            ('WS: %i')
-            % (window_size)
-        )
-        plt.legend(loc='upper left')
-        plot_name = ('error WS %i.png')%(window_size)
-        plt.savefig(plot_name, dpi=200)
-        plt.close()
-        print('errors visualized')
-        
-        # print cost
-        plt.figure(2)
-        plt.plot(train_cost[:, 0],train_cost[:,1],label='train_cost')
-
-        # decorative part      
-        plt.xlabel('epochs')
-        plt.ylabel('cost')
-        plt.title(
-            ('Window size: %i')
-            % (window_size)
-        )
-        plt.legend(loc='upper right')
-        plot_name = ('cost WS %i.png')%(window_size)
-        plt.savefig(plot_name, dpi=200)                    
-        plt.clf()
-        plt.close()
-        print('cost visualized')
-        
-        os.chdir('../')
-        os.chdir('../')
-        
-def visualize_da(train_cost, valid_cost, test_cost, 
-                 window_size, learning_rate, corruption_level, n_hidden,
-                 output_folder):
-        print "Visualizer visualize_costs"
-        
-        base_folder='dA_plots'        
         if not os.path.isdir(base_folder):
             os.makedirs(base_folder)
         os.chdir(base_folder)
@@ -155,27 +89,34 @@ def visualize_da(train_cost, valid_cost, test_cost,
         print('Set output')
                         
         train_cost=numpy.asarray(train_cost)
-        valid_cost=numpy.asarray(valid_cost)
-        test_cost=numpy.asarray(test_cost)
         print('converted to arrays')        
         
         # print errors
         plt.figure(1)
         plt.plot(train_cost[:, 0],train_cost[:,1],label='train_cost')
-        plt.plot(valid_cost[:, 0],valid_cost[:,1],label='valid_cost')
-        plt.plot(test_cost[:, 0],test_cost[:,1],label='test_cost')
         print('plots created, start decor')        
         
         # decorative part       
         plt.xlabel('epochs')
         plt.ylabel('cost')
-        plt.title(
-            ('WS: %i  LR: %f CL: %f Hid: %i')
-            % (window_size, learning_rate, corruption_level, n_hidden)
-        )
-        plt.legend(loc='upper left')
-        plot_name = ('error LR %f WS %i CL %f Hid %i.png') \
+        
+        if learning_rate<=0:
+            plt.title(
+                ('WS: %i CL: %f Hid: %i')
+                % (window_size, corruption_level, n_hidden)
+            )
+            plot_name = ('error WS %i CL %f Hid %i.png') \
+            % (window_size, corruption_level, n_hidden)
+        
+        else:
+            plt.title(
+                ('WS: %i  LR: %f CL: %f Hid: %i')
+                % (window_size, learning_rate, corruption_level, n_hidden)
+            )
+            plot_name = ('error LR %f WS %i CL %f Hid %i.png') \
             % (learning_rate, window_size, corruption_level, n_hidden)
+        
+        plt.legend(loc='upper left')
         plt.savefig(plot_name, dpi=200)
         plt.close()
         print('costs visualized')
@@ -185,10 +126,9 @@ def visualize_da(train_cost, valid_cost, test_cost,
         os.chdir('../')
         
 def visualize_pretraining(train_cost, window_size, learning_rate, corruption_level,
-                          n_hidden, da_layer, datasets_folder):
+                          n_hidden, da_layer, datasets_folder, base_folder):
         print "Visualizer visualize_sda_costs"
-        
-        base_folder='SdA_plots'        
+                    
         if not os.path.isdir(base_folder):
             os.makedirs(base_folder)
         os.chdir(base_folder)
@@ -214,13 +154,23 @@ def visualize_pretraining(train_cost, window_size, learning_rate, corruption_lev
         # decorative part       
         plt.xlabel('epochs')
         plt.ylabel('cost')
-        plt.title(
-            ('LR: %f CL: %f Hid: %i')
-            % (learning_rate, corruption_level, n_hidden)
-        )
+        if learning_rate<=0:
+            plt.title(
+                ('CL: %f Hid: %i')
+                % (corruption_level, n_hidden)
+            )
+        else:
+            plt.title(
+                ('LR: %f CL: %f Hid: %i')
+                % (learning_rate, corruption_level, n_hidden)
+            )
         plt.legend(loc='upper left')
-        plot_name = ('Pretrain layer: %i LR %f CL %f Hid %i.png') \
-            % (da_layer, learning_rate, corruption_level, n_hidden)
+        if learning_rate<=0:
+            plot_name = ('Pretrain layer: %i CL %f Hid %i.png') \
+                % (da_layer, corruption_level, n_hidden)
+        else:
+            plot_name = ('Pretrain layer: %i LR %f CL %f Hid %i.png') \
+                % (da_layer, learning_rate, corruption_level, n_hidden)
         plt.savefig(plot_name, dpi=200)
         plt.close()
         print('costs visualized')
@@ -230,10 +180,9 @@ def visualize_pretraining(train_cost, window_size, learning_rate, corruption_lev
         os.chdir('../')
         
 def visualize_finetuning(train_cost, train_error, valid_error, test_error, 
-                    window_size, learning_rate, datasets_folder):
+                    window_size, learning_rate, datasets_folder, base_folder):
         print "Visualizer visualize finetuning costs"
-        
-        base_folder='SdA_plots'        
+               
         if not os.path.isdir(base_folder):
             os.makedirs(base_folder)
         os.chdir(base_folder)
@@ -264,12 +213,19 @@ def visualize_finetuning(train_cost, train_error, valid_error, test_error,
         # decorative part       
         plt.xlabel('epochs')
         plt.ylabel('error(%)')
-        plt.title(
-            ('WS: %i  LR: %f')
-            % (window_size, learning_rate)
-        )
+        if learning_rate<=0:
+            plt.title(
+                ('WS: %i')
+                % (window_size)
+            )
+            plot_name = ('error WS %i.png')%(window_size)
+        else:
+            plt.title(
+                ('WS: %i  LR: %f')
+                % (window_size, learning_rate)
+            )
+            plot_name = ('error LR %f WS %i.png')%(learning_rate, window_size)
         plt.legend(loc='upper left')
-        plot_name = ('error LR %f WS %i.png')%(learning_rate, window_size)
         plt.savefig(plot_name, dpi=200)
         plt.close()
         print('errors visualized')
@@ -281,12 +237,20 @@ def visualize_finetuning(train_cost, train_error, valid_error, test_error,
         # decorative part      
         plt.xlabel('epochs')
         plt.ylabel('cost')
-        plt.title(
-            ('Window size: %i  Learning rate: %f')
-            % (window_size, learning_rate)
-        )
+        if learning_rate<=0:
+            plt.title(
+                ('Window size: %i')
+                % (window_size)
+            )
+            plot_name = ('cost WS %i.png')%(window_size)
+        else:
+            plt.title(
+                ('Window size: %i  Learning rate: %f')
+                % (window_size, learning_rate)
+            )
+            plot_name = ('cost LR %f WS %i.png')%(learning_rate, window_size)
+
         plt.legend(loc='upper right')
-        plot_name = ('cost LR %f WS %i.png')%(learning_rate, window_size)
         plt.savefig(plot_name, dpi=200)                    
         plt.clf()
         plt.close()

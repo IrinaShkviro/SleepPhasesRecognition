@@ -186,8 +186,7 @@ class SdA(object):
                               the dA layers
         '''
 
-        # index to a [mini]batch
-        index = T.lscalar('index')  # index to a minibatch
+        index = T.lscalar('index')
         corruption_level = T.scalar('corruption')  # % of corruption to use
         learning_rate = T.scalar('lr')  # learning rate to use
 
@@ -226,9 +225,6 @@ class SdA(object):
                          `valid`, `test` in this order, where each pair
                          is formed of two Theano variables, one for the
                          datapoints, the other for the labels
-
-        :type batch_size: int
-        :param batch_size: size of a minibatch
 
         :type learning_rate: float
         :param learning_rate: learning rate used during finetune stage
@@ -295,7 +291,8 @@ class SdA(object):
         return train_fn, valid_score, test_score
 
 
-def test_SdA(datasets, output_folder, window_size,
+def test_SdA(datasets, output_folder, base_folder,
+             window_size,
              pretrain_lr=0.001, pretraining_epochs=15,
              finetune_lr=0.1, training_epochs=1000):
     """
@@ -372,10 +369,14 @@ def test_SdA(datasets, output_folder, window_size,
             
             print 'Pre-training layer %i, epoch %d, cost %f' % (i, epoch, float(numpy.mean(cur_train_cost)))
         
-        visualize_pretraining(train_cost=train_cost_array, window_size=window_size, 
-                              learning_rate=pretrain_lr, corruption_level=corruption_levels[i],
-                              n_hidden=sda.dA_layers[i].n_hidden, da_layer=i,
-                              datasets_folder=output_folder)
+        visualize_pretraining(train_cost=train_cost_array,
+                              window_size=window_size, 
+                              learning_rate=pretrain_lr,
+                              corruption_level=corruption_levels[i],
+                              n_hidden=sda.dA_layers[i].n_hidden,
+                              da_layer=i,
+                              datasets_folder=output_folder,
+                              base_folder=base_folder)
 
     end_time = timeit.default_timer()
 
@@ -506,10 +507,14 @@ def test_SdA(datasets, output_folder, window_size,
     test_error_array[-1].append(float(iter)/n_train_samples)
     test_error_array[-1].append(test_score)
     
-    visualize_finetuning(train_cost=train_cost_array, train_error=train_error_array, 
-                    valid_error=valid_error_array, test_error=test_error_array,
-                    window_size=window_size, learning_rate=finetune_lr,
-                    datasets_folder=output_folder)
+    visualize_finetuning(train_cost=train_cost_array,
+                         train_error=train_error_array,
+                         valid_error=valid_error_array,
+                         test_error=test_error_array,
+                         window_size=window_size,
+                         learning_rate=finetune_lr,
+                         datasets_folder=output_folder,
+                         base_folder=base_folder)
                     
     print(train_confusion_matrix, 'train_confusion_matrix')    
 
@@ -552,10 +557,14 @@ def test_all_params():
     for plr in pretrain_learning_rates:
         for flr in finetuning_learning_rates:
             for ws in window_sizes:
-                test_SdA(datasets=datasets, output_folder=output_folder,
+                test_SdA(datasets=datasets,
+                         output_folder=output_folder,
+                         base_folder='SdA_plots',
                          window_size=ws,
-                         pretrain_lr=plr, pretraining_epochs=50,
-                         finetune_lr=flr, training_epochs=1000)
+                         pretrain_lr=plr,
+                         pretraining_epochs=50,
+                         finetune_lr=flr,
+                         training_epochs=1000)
 
 if __name__ == '__main__':
     test_all_params()

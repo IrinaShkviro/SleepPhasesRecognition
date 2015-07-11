@@ -45,7 +45,7 @@ import numpy
 import theano
 import theano.tensor as T
 
-from MyVisualizer import visualize_costs_cg
+from MyVisualizer import visualize_logistic
 from ichi_seq_data_reader import ICHISeqDataReader
 
 class LogisticRegression(object):
@@ -95,13 +95,18 @@ class LogisticRegression(object):
         self.b = self.theta[n_in * n_out:n_in * n_out + n_out]
 
         # compute vector of class-membership probabilities in symbolic form
-        self.p_y_given_x = T.flatten(T.nnet.softmax(T.dot(self.input, self.W) + self.b))
+        self.p_y_given_x = T.nnet.softmax(T.dot(self.input, self.W) + self.b)
 
         # compute prediction as class whose probability is maximal in
         # symbolic form
         self.y_pred = T.argmax(self.p_y_given_x)
         
-        self.iter = 0
+        self.train_cost_array=[]
+        self.train_error_array=[]
+        self.valid_error_array=[]
+        self.test_error_array=[]
+        self.validation_scores=[]
+        self.epoch=0
 
     def negative_log_likelihood(self, y):
         """Return the negative log-likelihood of the prediction of this model
@@ -142,8 +147,8 @@ class LogisticRegression(object):
         """
         return self.y_pred
 
-
-def test_params(datasets, output_folder, window_size, n_epochs=50):
+def test_params(datasets, output_folder, base_folder,
+                window_size, n_epochs=50):
     """Demonstrate conjugate gradient optimization of a log-linear model
 
     This is demonstrated on ICHI.
@@ -232,10 +237,10 @@ def test_params(datasets, output_folder, window_size, n_epochs=50):
         name="conj_grad"
     )
     
-    train_cost_array = []
-    train_error_array = []
+    classifier.train_cost_array = []
+    classifier.train_error_array = []
     train_confusion_matrix = numpy.zeros((7, 7))
-    classifier.iter = 0
+    classifier.epoch = 0
 
     # creates a function that computes the average cost on the training set
     def train_fn(theta_value):
@@ -249,15 +254,15 @@ def test_params(datasets, output_folder, window_size, n_epochs=50):
             train_confusion_matrix[cur_actual][cur_pred] += 1
         
         this_train_loss = float(numpy.mean(cur_train_cost))  
-        train_cost_array.append([])
-        train_cost_array[-1].append(classifier.iter)
-        train_cost_array[-1].append(this_train_loss)
+        classifier.train_cost_array.append([])
+        classifier.train_cost_array[-1].append(classifier.epoch)
+        classifier.train_cost_array[-1].append(this_train_loss)
        
-        train_error_array.append([])
-        train_error_array[-1].append(classifier.iter)
-        train_error_array[-1].append(float(numpy.mean(cur_train_error)*100))
+        classifier.train_error_array.append([])
+        classifier.train_error_array[-1].append(classifier.epoch)
+        classifier.train_error_array[-1].append(float(numpy.mean(cur_train_error)*100))
                 
-        classifier.iter += 1
+        classifier.epoch += 1
         
         return this_train_loss
 
@@ -270,9 +275,9 @@ def test_params(datasets, output_folder, window_size, n_epochs=50):
             grad += conj_grad(i)
         return grad / n_train_samples
 
-    validation_scores = [numpy.inf, 0]
-    valid_error_array = []
-    test_error_array = []
+    classifier.validation_scores = [numpy.inf, 0]
+    classifier.valid_error_array = []
+    classifier.test_error_array = []
 
     # creates the validation function
     def callback(theta_value):
@@ -282,21 +287,19 @@ def test_params(datasets, output_folder, window_size, n_epochs=50):
                              for i in xrange(n_valid_samples)]
         this_validation_loss = numpy.mean(validation_losses) * 100.,
         print('validation error %f %%' % (this_validation_loss))
-        valid_error_array.append([])
-        valid_error_array[-1].append(iter)
-        valid_error_array[-1].append(this_validation_loss)
+        classifier.valid_error_array.append(this_validation_loss)
 
         # check if it is better then best validation score got until now
-        if this_validation_loss < validation_scores[0]:
+        if this_validation_loss < classifier.validation_scores[0]:
             # if so, replace the old one, and compute the score on the
             # testing dataset
-            validation_scores[0] = this_validation_loss
+            classifier.validation_scores[0] = this_validation_loss
             test_losses = [test_model(i)
                            for i in xrange(n_test_samples)]
-            validation_scores[1] = numpy.mean(test_losses)
-            test_error_array.append([])
-            test_error_array[-1].append(iter)
-            test_error_array[-1].append(validation_scores[1])
+            classifier.validation_scores[1] = numpy.mean(test_losses)
+            classifier.test_error_array.append([])
+            classifier.test_error_array[-1].append(classifier.epoch)
+            classifier.test_error_array[-1].append(classifier.validation_scores[1])
 
     ###############
     # TRAIN MODEL #
@@ -314,16 +317,20 @@ def test_params(datasets, output_folder, window_size, n_epochs=50):
         disp=0,
         maxiter=n_epochs
     )
-    visualize_costs_cg(train_cost_array, train_error_array, 
-                    valid_error_array, test_error_array,
-                    window_size, output_folder)
+    visualize_logistic(train_cost=classifier.train_cost_array,
+                       train_error=classifier.train_error_array,
+                       valid_error=classifier.valid_error_array,
+                       test_error=classifier.test_error_array,
+                       window_size=window_size,
+                       output_folder=output_folder,
+                       base_folder=base_folder)
     end_time = timeit.default_timer()
     print(
         (
             'Optimization complete with best validation score of %f %%, with '
             'test performance %f %%'
         )
-        % (validation_scores[0] * 100., validation_scores[1] * 100.)
+        % (classifier.validation_scores[0] * 100., classifier.validation_scores[1] * 100.)
     )
 
     print >> sys.stderr, ('The code for file ' +
@@ -351,10 +358,14 @@ def test_all_params():
             (test_set_x, test_set_y)]
             
     output_folder=('[%s], [%s], [%s]')%(",".join(train_data), ",".join(valid_data), ",".join(test_data))
+    base_folder='regression_cg_plots'
     
     for ws in window_sizes:
-        test_params(datasets=datasets, output_folder=output_folder,
-                    window_size = ws, n_epochs=1000)
+        test_params(datasets=datasets,
+                    output_folder=output_folder,
+                    base_folder=base_folder,
+                    window_size = ws,
+                    n_epochs=1000)
 
 if __name__ == '__main__':
     test_all_params()
