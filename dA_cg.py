@@ -372,7 +372,7 @@ def test_da_params(corruption_level):
                  n_hidden=ws*2,
                  dataset=train_set,
                  output_folder=output_folder,
-                 base_folder='dA_plots')
+                 base_folder='dA_cg_plots')
 
 
 if __name__ == '__main__':
