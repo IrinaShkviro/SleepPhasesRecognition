@@ -449,7 +449,7 @@ def test_all_params():
             (test_set_x, test_set_y)]
             
     output_folder=('[%s], [%s], [%s]')%(",".join(train_data), ",".join(valid_data), ",".join(test_data))
-    base_folder='regression_plots'
+
     for lr in learning_rates:
         for ws in window_sizes:
             test_params(learning_rate=lr,
@@ -457,7 +457,7 @@ def test_all_params():
                         window_size = ws,
                         datasets=datasets,
                         output_folder=output_folder,
-                        base_folder=base_folder)
+                        base_folder='regression_plots')
 
 if __name__ == '__main__':
     test_all_params()
