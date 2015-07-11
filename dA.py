@@ -467,7 +467,6 @@ def test_da_params(corruption_level):
     datasets = [train_set, valid_set, test_set]
     
     output_folder=('[%s], [%s], [%s]')%(",".join(train_data), ",".join(valid_data), ",".join(test_data))
-    base_folder='dA__cg_plots'
     
     for lr in learning_rates:
         for ws in window_sizes:
@@ -478,7 +477,7 @@ def test_da_params(corruption_level):
                      n_hidden=ws*2,
                      datasets=datasets,
                      output_folder=output_folder,
-                     base_folder=base_folder)
+                     base_folder='dA_plots')
 
 
 if __name__ == '__main__':
