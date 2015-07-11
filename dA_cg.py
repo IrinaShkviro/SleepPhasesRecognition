@@ -364,7 +364,6 @@ def test_da_params(corruption_level):
     train_set, train_labels = train_reader.read_all()
     
     output_folder=('[%s]')%(",".join(train_data))
-    base_folder='dA_plots'
     
     for ws in window_sizes:
         train_dA(training_epochs=1,
@@ -373,7 +372,7 @@ def test_da_params(corruption_level):
                  n_hidden=ws*2,
                  dataset=train_set,
                  output_folder=output_folder,
-                 base_folder=base_folder)
+                 base_folder='dA_plots')
 
 
 if __name__ == '__main__':
