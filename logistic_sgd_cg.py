@@ -284,7 +284,7 @@ def test_params(datasets, output_folder, base_folder,
         #compute the validation loss
         validation_losses = [validate_model(i)
                              for i in xrange(n_valid_samples)]
-        this_validation_loss = numpy.mean(validation_losses) * 100.,
+        this_validation_loss = float(numpy.mean(validation_losses) * 100.,)
         print('validation error %f %%' % (this_validation_loss))
         classifier.valid_error_array.append([])
         classifier.valid_error_array[-1].append(classifier.epoch)
@@ -297,7 +297,7 @@ def test_params(datasets, output_folder, base_folder,
             classifier.validation_scores[0] = this_validation_loss
             test_losses = [test_model(i)
                            for i in xrange(n_test_samples)]
-            classifier.validation_scores[1] = numpy.mean(test_losses)
+            classifier.validation_scores[1] = float(numpy.mean(test_losses))
             classifier.test_error_array.append([])
             classifier.test_error_array[-1].append(classifier.epoch)
             classifier.test_error_array[-1].append(classifier.validation_scores[1])
@@ -323,6 +323,7 @@ def test_params(datasets, output_folder, base_folder,
                        valid_error=classifier.valid_error_array,
                        test_error=classifier.test_error_array,
                        window_size=window_size,
+                       learning_rate=0,
                        output_folder=output_folder,
                        base_folder=base_folder)
     end_time = timeit.default_timer()
@@ -365,7 +366,7 @@ def test_all_params():
                     output_folder=output_folder,
                     base_folder='regression_cg_plots',
                     window_size = ws,
-                    n_epochs=1000)
+                    n_epochs=1)
 
 if __name__ == '__main__':
     test_all_params()
