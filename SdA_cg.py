@@ -27,11 +27,13 @@ import theano
 import theano.tensor as T
 from theano.tensor.shared_randomstreams import RandomStreams
 
-from logistic_sgd_cg import LogisticRegression, zero_in_array
-from mlp import HiddenLayer
+from logistic_sgd_cg import LogisticRegression
+from mlp_cg import HiddenLayer
 from dA_cg import dA
 from MyVisualizer import visualize_pretraining, visualize_finetuning
 from ichi_seq_data_reader import ICHISeqDataReader
+
+theano.config.exception_verbosity='high'
 
 # start-snippet-1
 class SdA(object):
@@ -144,8 +146,7 @@ class SdA(object):
                           input=layer_input,
                           n_visible=input_size,
                           n_hidden=hidden_layers_sizes[i],
-                          W=sigmoid_layer.W,
-                          bhid=sigmoid_layer.b)
+                          theta=sigmoid_layer.theta)
             self.dA_layers.append(dA_layer)
         # end-snippet-2
         # We now need to add a logistic layer on top of the MLP
@@ -155,7 +156,6 @@ class SdA(object):
             n_out=n_outs
         )
 
-        self.params.extend(self.logLayer.params)
         # construct a function that implements one step of finetunining
 
         # compute the cost for second phase of training,
@@ -166,7 +166,7 @@ class SdA(object):
         # minibatch given by self.x and self.y
         self.errors = self.logLayer.errors(self.y)
         self.predict = self.logLayer.predict()
-
+        
     def pretraining_functions(self, train_set_x, window_size):
         ''' Generates a list of functions, each of them implementing one
         step in trainnig the dA corresponding to the layer with same index.
@@ -184,9 +184,29 @@ class SdA(object):
 
         # index
         index = T.lscalar('index')
+        theta_value = T.vector('theta')
         x = T.matrix('x')  # the data is presented as 3D vector
         corruption_level = T.scalar('corruption')  # % of corruption to use
-        n_train_samples = train_set_x.get_value(borrow=True).shape[0] - window_size + 1       
+        n_train_samples = train_set_x.get_value(borrow=True).shape[0] - window_size + 1
+        
+        # creates a function that computes the average cost on the training set
+        def train_fn_vis(cur_dA, conj_cost):
+            train_losses = [conj_cost(i) for i in xrange(n_train_samples)]
+                                            
+            this_train_loss = float(numpy.mean(train_losses))  
+            cur_dA.train_cost_array.append([])
+            cur_dA.train_cost_array[-1].append(cur_dA.epoch)
+            cur_dA.train_cost_array[-1].append(this_train_loss)
+            cur_dA.epoch += 1
+            return theano.shared(this_train_loss)
+            
+        # creates a function that computes the average gradient of cost with
+        # respect to theta
+        def train_fn_grad_vis(conj_grad):
+            grad = conj_grad(0)
+            for i in xrange(1, n_train_samples):
+                grad += conj_grad(i)
+            return theano.shared(grad / n_train_samples)
 
         pretrain_fns = []
         pretrain_updates = []
@@ -196,48 +216,49 @@ class SdA(object):
 
             # compile a theano function that returns the cost
             conj_cost = theano.function(
-                inputs=[index],
+                inputs=[
+                    index,
+                    theano.Param(corruption_level, default=0.2),
+                ],
                 outputs=cost,
                 givens={
-                    x: train_set_x[index: index + window_size]
+                    self.x: train_set_x[index: index + window_size]
                 },
-                name="conj_cost"
+                on_unused_input='warn'
             )
         
             # compile a theano function that returns the gradient with respect to theta
             conj_grad = theano.function(
-                [index],
-                T.grad(cost, cur_dA.theta),
+                inputs=[
+                    index,
+                    theano.Param(corruption_level, default=0.2),
+                ],
+                outputs=T.grad(cost, cur_dA.theta),
                 givens={
-                    x: train_set_x[index: index + window_size]
+                    self.x: train_set_x[index: index + window_size]
                 },
-                name="conj_grad"
+                on_unused_input='warn'
             )
             
             cur_dA.train_cost_array = []
             cur_dA.epoch = 0
-           
-            # creates a function that computes the average cost on the training set
-            def train_fn(theta_value):
-                cur_dA.theta.set_value(theta_value, borrow=True)
-                train_losses = [conj_cost(i) for i in xrange(n_train_samples)]
-                                        
-                this_train_loss = float(numpy.mean(train_losses))  
-                cur_dA.train_cost_array.append([])
-                cur_dA.train_cost_array[-1].append(cur_dA.epoch)
-                cur_dA.train_cost_array[-1].append(this_train_loss)
-                cur_dA.epoch += 1
-                return this_train_loss
-                    
-            # creates a function that computes the average gradient of cost with
-            # respect to theta
-            def train_fn_grad(theta_value):
-                cur_dA.theta.set_value(theta_value, borrow=True)
-                grad = conj_grad(0)
-                for i in xrange(1, cur_dA.n_train_samples):
-                    grad += conj_grad(i)
-                return grad / cur_dA.n_train_samples
-                            
+            
+            train_result = train_fn_vis(cur_dA, conj_cost)
+            
+            train_fn = theano.function(
+                inputs=[theta_value],
+                outputs=train_result,
+                updates=[(cur_dA.theta, theta_value)]
+            )
+            
+            train_grad_result = train_fn_grad_vis(conj_grad)
+            
+            train_fn_grad = theano.function(
+                inputs=[theta_value],
+                outputs=train_grad_result,
+                updates=[(cur_dA.theta, theta_value)]
+            )
+                                                           
             # append `fn` to the list of functions
             pretrain_fns.append(train_fn)
             pretrain_updates.append(train_fn_grad)
@@ -288,8 +309,8 @@ class SdA(object):
             [index],
             outputs=self.errors,
             givens={
-                x: test_set_x[index: index + window_size],
-                y: test_set_y[index + window_size - 1]
+                self.x: test_set_x[index: index + window_size],
+                self.y: test_set_y[index + window_size - 1]
             },
             name='test'
         )
@@ -299,8 +320,8 @@ class SdA(object):
             [index],
             outputs=self.finetune_cost,
             givens={
-                x: train_set_x[index: index + window_size],
-                y: train_set_y[index + window_size - 1]
+                self.x: train_set_x[index: index + window_size],
+                self.y: train_set_y[index + window_size - 1]
             },
             name="conj_cost"
         )
@@ -310,8 +331,8 @@ class SdA(object):
             [index],
             outputs=T.grad(self.finetune_cost, self.logLayer.theta),
             givens={
-                x: train_set_x[index: index + window_size],
-                y: train_set_y[index + window_size - 1]
+                self.x: train_set_x[index: index + window_size],
+                self.y: train_set_y[index + window_size - 1]
             },
             name="conj_grad"
         )
@@ -534,7 +555,7 @@ def test_all_params():
                  output_folder=output_folder,
                  base_folder='SdA_cg_plots',
                  window_size=ws,
-                 pretraining_epochs=1,
+                 pretraining_epochs=15,
                  training_epochs=1000)
 
 if __name__ == '__main__':
