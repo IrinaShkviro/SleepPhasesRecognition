@@ -282,20 +282,11 @@ def pretraining_functions_sda_sgd(sda, train_set_x, window_size):
     pretrain_fns = []
     for cur_dA in sda.dA_layers:
         # get the cost and the updates list
-        cost = cur_dA.get_cost(
-            corruption_level=corruption_level
+        cost, updates = cur_dA.get_cost_updates(
+            corruption_level=corruption_level,
+            learning_rate=learning_rate
         )
-           
-        x = cur_dA.input
-                
-        # compute the gradients of the cost of the `dA` with respect
-        # to its parameters
-        gparams = T.grad(cost, cur_dA.params)
-        # generate the list of updates
-        updates = [
-            (param, param - learning_rate * gparam)
-            for param, gparam in zip(cur_dA.params, gparams)
-        ]
+
         # compile the theano function
         fn = theano.function(
             inputs=[
@@ -306,7 +297,7 @@ def pretraining_functions_sda_sgd(sda, train_set_x, window_size):
             outputs=cost,
             updates=updates,
             givens={
-                x: train_set_x[index: index + window_size]
+                sda.x: train_set_x[index: index + window_size]
             }
         )
         # append `fn` to the list of functions
@@ -314,7 +305,7 @@ def pretraining_functions_sda_sgd(sda, train_set_x, window_size):
 
     return pretrain_fns
     
-def build_finetune_functions(self, datasets, window_size, learning_rate):
+def build_finetune_functions(sda, datasets, window_size, learning_rate):
     '''Generates a function `train` that implements one step of
     finetuning, a function `validate` that computes the error on
     a batch from the validation set, and a function `test` that
@@ -342,41 +333,44 @@ def build_finetune_functions(self, datasets, window_size, learning_rate):
     index = T.lscalar('index')  # index to a sample
 
     # compute the gradients with respect to the model parameters
-    gparams = T.grad(self.finetune_cost, self.params)
+    gparams = T.grad(sda.finetune_cost, sda.params)
 
     # compute list of fine-tuning updates
     updates = [
         (param, param - gparam * learning_rate)
-        for param, gparam in zip(self.params, gparams)
+        for param, gparam in zip(sda.params, gparams)
     ]
 
     train_fn = theano.function(
         inputs=[index],
-        outputs=[self.finetune_cost, self.errors, self.predict, self.y],
+        outputs=[sda.finetune_cost,
+                 sda.errors,
+                 sda.predict,
+                 sda.y],
         updates=updates,
         givens={
-            self.x: train_set_x[index: index + window_size],
-            self.y: train_set_y[index + window_size - 1]
+            sda.x: train_set_x[index: index + window_size],
+            sda.y: train_set_y[index + window_size - 1]
         },
         name='train'
     )
 
     test_score_i = theano.function(
         [index],
-        outputs=self.errors,
+        outputs=sda.errors,
         givens={
-            self.x: test_set_x[index: index + window_size],
-            self.y: test_set_y[index + window_size - 1]
+            sda.x: test_set_x[index: index + window_size],
+            sda.y: test_set_y[index + window_size - 1]
         },
         name='test'
     )
 
     valid_score_i = theano.function(
         [index],
-        outputs=self.errors,
+        outputs=sda.errors,
         givens={
-            self.x: valid_set_x[index: index + window_size],
-            self.y: valid_set_y[index + window_size - 1]
+            sda.x: valid_set_x[index: index + window_size],
+            sda.y: valid_set_y[index + window_size - 1]
         },
         name='valid'
     )
@@ -397,8 +391,9 @@ def pretrain_sda_sgd(sda, train_set_x, window_size, pretraining_epochs,
     n_train_samples =  train_set_x.get_value(borrow=True).shape[0] - window_size + 1    
 
     print '... getting the pretraining functions'
-    pretraining_fns = pretraining_functions_sda_sgd(train_set_x=train_set_x,
-                                                window_size=window_size)
+    pretraining_fns = pretraining_functions_sda_sgd(sda=sda,
+                                                    train_set_x=train_set_x,
+                                                    window_size=window_size)
 
     print '... pre-training the model'
     ## Pre-train layer-wise
@@ -429,6 +424,7 @@ def finetune_sda_sgd(sda, datasets, window_size, finetune_lr, training_epochs):
     # get the training, validation and testing functions for the model
     print '... getting the finetuning functions'
     train_fn, validate_model, test_model = build_finetune_functions(
+        sda=sda,
         datasets=datasets,
         window_size=window_size,
         learning_rate=finetune_lr
