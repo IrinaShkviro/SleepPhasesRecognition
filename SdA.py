@@ -31,6 +31,7 @@ from dA import dA
 from MyVisualizer import visualize_pretraining, visualize_finetuning
 from ichi_seq_data_reader import ICHISeqDataReader
 from cg import pretrain_sda_cg, finetune_sda_cg
+from sgd import pretrain_sda_sgd, finetune_sda_sgd
 
 theano.config.exception_verbosity='high'
 
@@ -48,7 +49,6 @@ class SdA(object):
     def __init__(
         self,
         numpy_rng,
-        input,
         n_ins,
         hidden_layers_sizes,
         corruption_levels=[0.1, 0.1],
@@ -78,9 +78,13 @@ class SdA(object):
         self.dA_layers = []
         self.params = []
         self.n_layers = len(hidden_layers_sizes)
-        self.input=input
         self.n_ins=n_ins
         self.n_outs=n_outs
+        
+        # allocate symbolic variables for the data
+        self.x = T.matrix('x')  # the data is presented as rasterized images
+        self.y = T.iscalar('y')  # the labels are presented as 1D vector of
+                                 # [int] labels
 
         assert self.n_layers > 0
 
@@ -113,7 +117,7 @@ class SdA(object):
             # layer below or the input of the SdA if you are on the first
             # layer
             if i == 0:
-                layer_input = self.input
+                layer_input = self.x
             else:
                 layer_input = self.sigmoid_layers[-1].output
 
@@ -147,11 +151,21 @@ class SdA(object):
             n_in=hidden_layers_sizes[-1],
             n_out=n_outs
         )
+        self.params.append(self.logLayer.params)
+        
+        self.finetune_cost = self.logLayer.negative_log_likelihood(self.y)
+        # compute the gradients with respect to the model parameters
+        # symbolic variable that points to the number of errors made on the
+        # minibatch given by self.x and self.y
+        self.errors = self.logLayer.errors(self.y)
+        self.predict = self.logLayer.predict()
 
 def test_SdA(datasets,
              output_folder, base_folder,
              window_size,
              corruption_levels,
+             pretrain_lr=0,
+             finetune_lr=0,
              pretraining_epochs=1,
              training_epochs=1):
     """
@@ -176,7 +190,6 @@ def test_SdA(datasets,
     # compute number of examples given in training set
     n_in = window_size*3  # number of input units
     n_out = 7  # number of output units
-    x = T.matrix('x')
     
     # numpy random generator
     # start-snippet-3
@@ -185,9 +198,8 @@ def test_SdA(datasets,
     # construct the stacked denoising autoencoder class
     sda = SdA(
         numpy_rng=numpy_rng,
-        input=x,
         n_ins=n_in,
-        hidden_layers_sizes=[window_size*2, window_size*2],
+        hidden_layers_sizes=[window_size*2, window_size],
         n_outs=n_out
     )
     # end-snippet-3 start-snippet-4
@@ -197,14 +209,25 @@ def test_SdA(datasets,
     #########################
     
     start_time = timeit.default_timer()
+    '''
+    pretrained_sda = pretrain_sda_sgd(sda=sda,
+                                  train_set_x=train_set_x,
+                                  window_size=window_size,
+                                  pretraining_epochs=pretraining_epochs,
+                                  pretrain_lr=pretrain_lr,
+                                  corruption_levels=corruption_levels)
+    '''
+
     pretrained_sda = pretrain_sda_cg(sda=sda,
                                   train_set_x=train_set_x,
                                   window_size=window_size,
-                                  pretraining_epochs=pretraining_epochs)
-
+                                  pretraining_epochs=pretraining_epochs,
+                                  corruption_levels=corruption_levels)
+                                  
     end_time = timeit.default_timer()
     
     for i in xrange(sda.n_layers):
+        print(i, 'i pretrained')
         visualize_pretraining(train_cost=pretrained_sda.dA_layers[i].train_cost_array,
                               window_size=window_size,
                               learning_rate=0,
@@ -222,9 +245,10 @@ def test_SdA(datasets,
     # FINETUNING THE MODEL #
     ########################
     start_time = timeit.default_timer()
-    finetuned_sda = finetune_sda_cg(sda=pretrained_sda,
+    finetuned_sda = finetune_sda_sgd(sda=pretrained_sda,
                                     datasets=datasets,
                                     window_size=window_size,
+                                    finetune_lr=finetune_lr,
                                     training_epochs=training_epochs)
     end_time = timeit.default_timer()
     
@@ -258,6 +282,8 @@ def test_all_params():
 
     output_folder=('[%s], [%s], [%s]')%(",".join(train_data), ",".join(valid_data), ",".join(test_data))
     corruption_levels = [.1, .2]
+    pretrain_lr=.03
+    finetune_lr=.03
     
     for ws in window_sizes:
         test_SdA(datasets=datasets,
@@ -265,6 +291,8 @@ def test_all_params():
                  base_folder='SdA_cg_plots',
                  window_size=ws,
                  corruption_levels=corruption_levels,
+                 pretrain_lr=pretrain_lr,
+                 finetune_lr=finetune_lr,
                  pretraining_epochs=1,
                  training_epochs=1)
 
