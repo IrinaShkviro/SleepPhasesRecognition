@@ -36,8 +36,7 @@ from logistic_sgd import LogisticRegression
 
 # start-snippet-1
 class HiddenLayer(object):
-    def __init__(self, rng, input, n_in, n_out, W=None, b=None,
-                 activation=T.tanh):
+    def __init__(self, rng, input, n_in, n_out, theta=None, activation=T.tanh):
         """
         Typical hidden layer of a MLP: units are fully-connected and have
         sigmoidal activation function. Weight matrix W is of shape (n_in,n_out)
@@ -78,34 +77,32 @@ class HiddenLayer(object):
         #        compared to tanh
         #        We have no info for other function, so we use the same as
         #        tanh.
-        if W is None:
-            W_values = numpy.asarray(
-                rng.uniform(
-                    low=-numpy.sqrt(6. / (n_in + n_out)),
-                    high=numpy.sqrt(6. / (n_in + n_out)),
-                    size=(n_in, n_out)
+
+        if theta is None:
+            theta = theano.shared(
+                value=numpy.asarray(
+                    rng.uniform(
+                        low=-4 * numpy.sqrt(6. / (n_out + n_in + 1)),
+                        high=4 * numpy.sqrt(6. / (n_out + n_in + 1)),
+                        size=(n_in * n_out + n_out)
+                    ),
+                    dtype=theano.config.floatX
                 ),
-                dtype=theano.config.floatX
-            )
-            if activation == theano.tensor.nnet.sigmoid:
-                W_values *= 4
-
-            W = theano.shared(value=W_values, name='W', borrow=True)
-
-        if b is None:
-            b_values = numpy.zeros((n_out,), dtype=theano.config.floatX)
-            b = theano.shared(value=b_values, name='b', borrow=True)
-
-        self.W = W
-        self.b = b
-
+                name='theta',
+                borrow=True
+        )
+        self.theta = theta
+        
+        # W is represented by the fisr n_visible*n_hidden elements of theta
+        self.W = self.theta[0:n_in * n_out].reshape((n_in, n_out))
+        # b is the rest (last n_hidden elements)
+        self.b = self.theta[n_in * n_out:n_in * n_out + n_out]
+        
         lin_output = T.dot(self.input, self.W) + self.b
         self.output = (
             lin_output if activation is None
             else activation(lin_output)
         )
-        # parameters of the model
-        self.params = [self.W, self.b]
 
 
 # start-snippet-2
