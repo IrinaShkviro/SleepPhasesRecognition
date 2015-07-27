@@ -229,7 +229,7 @@ def train_da_cg(da, train_set, window_size, corruption_level, training_epochs):
     )
     return da
     
-def pretraining_functions_sda_cg(sda, train_set_x, window_size):
+def pretraining_functions_sda_cg(sda, train_set_x, window_size, corruption_levels):
     ''' Generates a list of functions, each of them implementing one
     step in trainnig the dA corresponding to the layer with same index.
     The function will require as input the index, and to train
@@ -245,80 +245,73 @@ def pretraining_functions_sda_cg(sda, train_set_x, window_size):
     # index
     index = T.lscalar('index')
     theta_value = T.vector('theta')
-    corruption_level = T.scalar('corruption')  # % of corruption to use
+#    corruption_level = T.scalar('corruption')  # % of corruption to use
     n_train_samples = train_set_x.get_value(borrow=True).shape[0] - window_size + 1
         
-    # creates a function that computes the average cost on the training set
-    def train_fn_vis(cur_dA, conj_cost):
-        train_losses = [conj_cost(i) for i in xrange(n_train_samples)]
-                                            
-        this_train_loss = float(numpy.mean(train_losses))  
-        cur_dA.train_cost_array.append([])
-        cur_dA.train_cost_array[-1].append(cur_dA.epoch)
-        cur_dA.train_cost_array[-1].append(this_train_loss)
-        cur_dA.epoch += 1
-        return theano.shared(this_train_loss)
-            
-    # creates a function that computes the average gradient of cost with
-    # respect to theta
-    def train_fn_grad_vis(conj_grad):
-        grad = conj_grad(0)
-        for i in xrange(1, n_train_samples):
-            grad += conj_grad(i)
-        return theano.shared(grad / n_train_samples)
-
-    x = sda.input
     pretrain_fns = []
     pretrain_updates = []
-    for cur_dA in sda.dA_layers:
-        # get the cost and the updates list
-        cost = cur_dA.get_cost(corruption_level)
-        
-        # compile a theano function that returns the cost
+    for da_index in xrange(sda.n_layers):
+        cur_dA=sda.dA_layers[da_index]
+        cost = cur_dA.get_cost(
+            corruption_level=corruption_levels[da_index]
+        )
+               
+        #  compile a theano function that returns the cost
         conj_cost = theano.function(
-            inputs=[
-                index,
-                theano.Param(corruption_level, default=0.2),
-            ],
+            inputs=[index],
             outputs=cost,
             givens={
-                x: train_set_x[index: index + window_size]
+                sda.x: train_set_x[index: index + window_size]
             },
-            on_unused_input='warn'
+            name="conj_cost"
         )
-        
+    
         # compile a theano function that returns the gradient with respect to theta
         conj_grad = theano.function(
-            inputs=[
-                index,
-                theano.Param(corruption_level, default=0.2),
-            ],
+            inputs=[index],
             outputs=T.grad(cost, cur_dA.theta),
             givens={
-                x: train_set_x[index: index + window_size]
+                sda.x: train_set_x[index: index + window_size]
             },
-            on_unused_input='warn'
+            name="conj_grad"
         )
-            
-        train_result = train_fn_vis(cur_dA, conj_cost)
         
         train_fn = theano.function(
             inputs=[theta_value],
-            outputs=train_result,
-            updates=[(cur_dA.theta, theta_value)]
+            outputs=float(numpy.mean([conj_cost(i)
+                            for i in xrange(n_train_samples)])),
+            updates=[(cur_dA.theta, theta_value),
+                     (cur_dA.train_cost_array, cur_dA.train_cost_array.append(float(numpy.mean([conj_cost(i)
+                            for i in xrange(n_train_samples)])))),
+                     (cur_dA.epoch, cur_dA.epoch+1)]
         )
-            
-        train_grad_result = train_fn_grad_vis(conj_grad)
-            
-        train_fn_grad = theano.function(
-            inputs=[theta_value],
-            outputs=train_grad_result,
-            updates=[(cur_dA.theta, theta_value)]
-        )
-                                                           
+        
+        '''# creates a function that computes the average cost on the training set
+        def train_fn(theta_value):
+            cur_dA.theta.set_value(theta_value, borrow=True)
+            train_losses = [conj_cost(i)
+                            for i in xrange(n_train_samples)]
+                                
+            this_train_loss = float(numpy.mean(train_losses))  
+            cur_dA.train_cost_array.append([])
+            cur_dA.train_cost_array[-1].append(cur_dA.epoch)
+            cur_dA.train_cost_array[-1].append(this_train_loss)
+            cur_dA.epoch += 1
+            return this_train_loss
+        '''    
+        # creates a function that computes the average gradient of cost with
+        # respect to theta
+        def train_fn_grad(theta_value):
+            cur_dA.theta.set_value(theta_value, borrow=True)
+            grad = conj_grad(0)
+            for i in xrange(1, n_train_samples):
+                grad += conj_grad(i)
+            return grad / n_train_samples
+                                                                       
         # append `fn` to the list of functions
         pretrain_fns.append(train_fn)
         pretrain_updates.append(train_fn_grad)
+        index=index+1
 
     return pretrain_fns, pretrain_updates
     
@@ -454,14 +447,15 @@ def finetune_functions_sda_cg(sda, datasets, window_size):
             sda.logLayer.test_error_array[-1].append(sda.logLayer.validation_scores[1])
     return train_fn, train_fn_grad, callback
     
-def pretrain_sda_cg(sda, train_set_x, window_size, pretraining_epochs):
+def pretrain_sda_cg(sda, train_set_x, window_size, pretraining_epochs, corruption_levels):
     ## Pre-train layer-wise
     print '... getting the pretraining functions'
     import scipy.optimize
     pretraining_fns, pretraining_updates = pretraining_functions_sda_cg(
         sda=sda,
         train_set_x=train_set_x,
-        window_size=window_size
+        window_size=window_size,
+        corruption_levels=corruption_levels
     )
     print '... pre-training the model'
     # using scipy conjugate gradient optimizer
