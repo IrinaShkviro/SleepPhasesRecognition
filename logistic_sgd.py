@@ -1,36 +1,23 @@
 """
 This tutorial introduces logistic regression using Theano and stochastic
 gradient descent.
-
 Logistic regression is a probabilistic, linear classifier. It is parametrized
 by a weight matrix :math:`W` and a bias vector :math:`b`. Classification is
 done by projecting data points onto a set of hyperplanes, the distance to
 which is used to determine a class membership probability.
-
 Mathematically, this can be written as:
-
 .. math::
   P(Y=i|x, W,b) &= softmax_i(W x + b) \\
                 &= \frac {e^{W_i x + b_i}} {\sum_j e^{W_j x + b_j}}
-
-
 The output of the model or prediction is then done by taking the argmax of
 the vector whose i'th element is P(Y=i|x).
-
 .. math::
-
   y_{pred} = argmax_i P(Y=i|x,W,b)
-
-
 This tutorial presents a stochastic gradient descent optimization method
 suitable for large datasets.
-
-
 References:
-
     - textbooks: "Pattern Recognition and Machine Learning" -
                  Christopher M. Bishop, section 4.3.2
-
 """
 __docformat__ = 'restructedtext en'
 
@@ -50,7 +37,6 @@ from ichi_seq_data_reader import ICHISeqDataReader
 
 class LogisticRegression(object):
     """Multi-class Logistic Regression Class
-
     The logistic regression is fully described by a weight matrix :math:`W`
     and bias vector :math:`b`. Classification is done by projecting data
     points onto a set of hyperplanes, the distance to which is used to
@@ -59,40 +45,35 @@ class LogisticRegression(object):
 
     def __init__(self, input, n_in, n_out):
         """ Initialize the parameters of the logistic regression
-
         :type input: theano.tensor.TensorType
         :param input: symbolic variable that describes the input of the
                       architecture (one minibatch)
-
         :type n_in: int
         :param n_in: number of input units, the dimension of the space in
                      which the datapoints lie
-
         :type n_out: int
         :param n_out: number of output units, the dimension of the space in
                       which the labels lie
-
         """
         # start-snippet-1
-        # initialize with 0 the weights W as a matrix of shape (n_in, n_out)
-        self.W = theano.shared(
-            value=numpy.zeros(
-                (n_in, n_out),
-                dtype=theano.config.floatX
-            ),
-            name='W',
-            borrow=True
-        )
         
-        # initialize the baises b as a vector of n_out 0s
-        self.b = theano.shared(
+        # initialize theta = (W,b) with 0s; W gets the shape (n_in, n_out),
+        # while b is a vector of n_out elements, making theta a vector of
+        # n_in*n_out + n_out elements
+        self.theta = theano.shared(
             value=numpy.zeros(
-                (n_out,),
+                n_in * n_out + n_out,
                 dtype=theano.config.floatX
             ),
-            name='b',
+            name='theta',
             borrow=True
         )
+        # W is represented by the fisr n_in*n_out elements of theta
+        self.W = self.theta[0:n_in * n_out].reshape((n_in, n_out))
+        # b is the rest (last n_out elements)
+        self.b = self.theta[n_in * n_out:n_in * n_out + n_out]
+        
+        self.input = input.reshape((1, n_in))
 
         # symbolic expression for computing the matrix of class-membership
         # probabilities
@@ -102,7 +83,7 @@ class LogisticRegression(object):
         # x is a matrix where row-j  represents input training sample-j
         # b is a vector where element-k represent the free parameter of hyper
         # plain-k
-        self.p_y_given_x = T.flatten(T.nnet.softmax(T.dot(input.reshape((1,n_in)),
+        self.p_y_given_x = T.flatten(T.nnet.softmax(T.dot(self.input,
                                                  self.W) + self.b))
 
         # symbolic description of how to compute prediction as class whose
@@ -112,6 +93,14 @@ class LogisticRegression(object):
 
         # parameters of the model
         self.params = [self.W, self.b]
+        
+        self.train_cost_array=[]
+        self.train_error_array=[]
+        self.valid_error_array=[]
+        self.test_error_array=[]
+        self.validation_scores=[numpy.inf, 0]
+        self.epoch=0
+
         
     def print_log_reg_types(self):
         print(self.W.type(), 'W')
@@ -123,7 +112,6 @@ class LogisticRegression(object):
     def negative_log_likelihood(self, y):
         """Return the negative log-likelihood of the prediction
         of this model under a given target distribution.
-
         :type y: theano.tensor.TensorType
         :param y: corresponds to a number that gives for each example the
                   correct label
@@ -146,7 +134,6 @@ class LogisticRegression(object):
 
     def errors(self, y):
         """Return 1 if y!=y_predicted (error) and 0 if right
-
         :type y: theano.tensor.TensorType
         :param y: corresponds to a vector that gives for each example the
                   correct label
@@ -178,28 +165,10 @@ class LogisticRegression(object):
         
 def zero_in_array(array):
     return [[0 for col in range(7)] for row in range(7)]
-
-def test_params(learning_rate,
-                n_epochs,
-                window_size,
-                datasets,
-                output_folder,
-                base_folder):
-    """
-    Demonstrate stochastic gradient descent optimization of a log-linear
-    model
-
-    This is demonstrated on ICHI.
-
-    :type learning_rate: float
-    :param learning_rate: learning rate used (factor for the stochastic
-                          gradient)
-
-    :type n_epochs: int
-    :param n_epochs: maximal number of epochs to run the optimizer
-
-    """
     
+def train_sgd(learning_rate, window_size, n_epochs,
+              datasets, classifier=None):
+                  
     # split the datasets
     (train_set_x, train_set_y) = datasets[0]
     (valid_set_x, valid_set_y) = datasets[1]
@@ -209,31 +178,26 @@ def test_params(learning_rate,
     n_train_samples =  train_set_x.get_value(borrow=True).shape[0] - window_size + 1    
     n_valid_samples = valid_set_x.get_value(borrow=True).shape[0] - window_size + 1    
     n_test_samples = test_set_x.get_value(borrow=True).shape[0] - window_size + 1
-    
-    
-    ######################
-    # BUILD ACTUAL MODEL #
-    ######################
-    print '... building the model'
 
     # allocate symbolic variables for the data
-    index = T.lscalar()  # index to a [mini]batch
+    index = T.lscalar()
 
     # generate symbolic variables for input (x and y represent a
     # minibatch)
     x = T.matrix('x')  # data, presented as window with x, y, x for each sample
     y = T.iscalar('y')  # labels, presented as int label
 
-    # construct the logistic regression class
-    # Each ICHI input has size window_size*3
-    classifier = LogisticRegression(input=x, n_in=window_size*3, n_out=7)
-    classifier.print_log_reg_types()
+    if classifier is None:
+        # construct the logistic regression class
+        # Each ICHI input has size window_size*3
+        classifier = LogisticRegression(input=x, n_in=window_size*3, n_out=7)
 
-    # the cost we minimize during training is the negative log likelihood of
-    # the model in symbolic format
     cost = classifier.negative_log_likelihood(y)
+    # compute the gradient of cost with respect to theta = (W,b)
+    g_theta = T.grad(cost=cost, wrt=classifier.theta)
+    
     predict = classifier.predict()
-
+    
     # compiling a Theano function that computes the mistakes that are made by
     # the model on a row
     test_model = theano.function(
@@ -254,16 +218,12 @@ def test_params(learning_rate,
         }
     )
 
-    # compute the gradient of cost with respect to theta = (W,b)
-    g_W = T.grad(cost=cost, wrt=classifier.W)
-    g_b = T.grad(cost=cost, wrt=classifier.b)
-
-    # start-snippet-3
     # specify how to update the parameters of the model as a list of
     # (variable, update expression) pairs.
-    updates = [(classifier.W, classifier.W - learning_rate * g_W),
-               (classifier.b, classifier.b - learning_rate * g_b)]
+    #updates = [(classifier.theta, T.set_subtensor(classifier.W, classifier.W - learning_rate * g_W)),
+    #           (classifier.theta, T.set_subtensor(classifier.b, classifier.b - learning_rate * g_b))]
 
+    updates = [(classifier.theta, classifier.theta - learning_rate * g_theta)]
     # compiling a Theano function `train_model` that returns the cost, but in
     # the same time updates the parameter of the model based on the rules
     # defined in `updates`
@@ -276,8 +236,7 @@ def test_params(learning_rate,
             y: train_set_y[index + window_size - 1]
         }
     )
-    # end-snippet-3
-
+    
     ###############
     # TRAIN MODEL #
     ###############
@@ -290,28 +249,21 @@ def test_params(learning_rate,
                                   # considered significant
     validation_frequency = patience / 4
 
-    best_validation_loss = numpy.inf
-    start_time = time.clock()
-
     done_looping = False
-    epoch = 0
+
     iter = 0
-    train_cost_array = []
-    train_error_array = []
-    valid_error_array = []
-    test_error_array = []
     cur_train_cost =[]
     cur_train_error = []
     train_confusion_matrix = numpy.zeros((7, 7))
     valid_confusion_matrix = numpy.zeros((7, 7))
     print(n_train_samples, 'train_samples')
     
-    while (epoch < n_epochs) and (not done_looping):
+    while (classifier.epoch < n_epochs) and (not done_looping):
         train_confusion_matrix = zero_in_array(train_confusion_matrix)
         for index in xrange(n_train_samples):            
             sample_cost, sample_error, cur_pred, cur_actual = train_model(index)
             # iteration number
-            iter = epoch * n_train_samples + index
+            iter = classifier.epoch * n_train_samples + index
                 
             cur_train_cost.append(sample_cost)
             cur_train_error.append(sample_error)
@@ -327,14 +279,14 @@ def test_params(learning_rate,
                     valid_confusion_matrix[cur_actual][cur_pred] += 1
     
                 this_validation_loss = float(numpy.mean(validation_losses))*100                 
-                valid_error_array.append([])
-                valid_error_array[-1].append(float(iter)/n_train_samples)
-                valid_error_array[-1].append(this_validation_loss)
+                classifier.valid_error_array.append([])
+                classifier.valid_error_array[-1].append(float(iter)/n_train_samples)
+                classifier.valid_error_array[-1].append(this_validation_loss)
                         
                 print(
                     'epoch %i, iter %i/%i, validation error %f %%' %
                     (
-                        epoch,
+                        classifier.epoch,
                         index + 1,
                         n_train_samples,
                         this_validation_loss
@@ -342,13 +294,13 @@ def test_params(learning_rate,
                 )
        
                 # if we got the best validation score until now
-                if this_validation_loss < best_validation_loss:
+                if this_validation_loss < classifier.validation_scores[0]:
                     #improve patience if loss improvement is good enough
-                    if this_validation_loss < best_validation_loss *  \
+                    if this_validation_loss < classifier.validation_scores[0] *  \
                         improvement_threshold:
                         patience = max(patience, iter * patience_increase)
         
-                    best_validation_loss = this_validation_loss
+                    classifier.validation_scores[0] = this_validation_loss
                     # test it on the test set
                          
                     test_result = [test_model(i)
@@ -356,10 +308,11 @@ def test_params(learning_rate,
                     test_result = numpy.asarray(test_result)
                     test_losses = test_result[:,0]
                     test_score = float(numpy.mean(test_losses))*100
+                    classifier.validation_scores[1] = test_score
                             
-                    test_error_array.append([])
-                    test_error_array[-1].append(float(iter)/n_train_samples)
-                    test_error_array[-1].append(test_score)
+                    classifier.test_error_array.append([])
+                    classifier.test_error_array[-1].append(float(iter)/n_train_samples)
+                    classifier.test_error_array[-1].append(test_score)
         
                     print(
                         (
@@ -367,7 +320,7 @@ def test_params(learning_rate,
                             ' best model %f %%'
                         ) %
                         (
-                            epoch,
+                            classifier.epoch,
                             index + 1,
                             n_train_samples,
                             test_score
@@ -378,17 +331,17 @@ def test_params(learning_rate,
                 print('Done looping')
                 break
                            
-        train_cost_array.append([])
-        train_cost_array[-1].append(float(iter)/n_train_samples)
-        train_cost_array[-1].append(float(numpy.mean(cur_train_cost)))
+        classifier.train_cost_array.append([])
+        classifier.train_cost_array[-1].append(float(iter)/n_train_samples)
+        classifier.train_cost_array[-1].append(float(numpy.mean(cur_train_cost)))
         cur_train_cost =[]
        
-        train_error_array.append([])
-        train_error_array[-1].append(float(iter)/n_train_samples)
-        train_error_array[-1].append(float(numpy.mean(cur_train_error)*100))
+        classifier.train_error_array.append([])
+        classifier.train_error_array[-1].append(float(iter)/n_train_samples)
+        classifier.train_error_array[-1].append(float(numpy.mean(cur_train_error)*100))
         cur_train_error =[]
                 
-        epoch = epoch + 1
+        classifier.epoch = classifier.epoch + 1
         gc.collect()
             
     test_confusion_matrix = zero_in_array(numpy.zeros((7, 7)))
@@ -399,34 +352,233 @@ def test_params(learning_rate,
         test_confusion_matrix[cur_actual][cur_pred] += 1
     
     test_score = numpy.mean(test_losses)*100
-    test_error_array.append([])
-    test_error_array[-1].append(float(iter)/n_train_samples)
-    test_error_array[-1].append(test_score)
+    classifier.test_error_array.append([])
+    classifier.test_error_array[-1].append(float(iter)/n_train_samples)
+    classifier.test_error_array[-1].append(test_score)
     
-    visualize_logistic(train_cost=train_cost_array,
-                    train_error=train_error_array, 
-                    valid_error=valid_error_array,
-                    test_error=test_error_array,
+    print(train_confusion_matrix, 'train_confusion_matrix')
+    print(valid_confusion_matrix, 'valid_confusion_matrix')
+    print(test_confusion_matrix, 'test_confusion_matrix')
+
+    return classifier
+    
+def train_cg(datasets, window_size, n_epochs, classifier=None):
+    #############
+    # LOAD DATA #
+    #############
+    
+    # split the datasets
+    (train_set_x, train_set_y) = datasets[0]
+    (valid_set_x, valid_set_y) = datasets[1]
+    (test_set_x, test_set_y) = datasets[2]
+
+        # compute number of examples given in datasets
+    n_train_samples =  train_set_x.get_value(borrow=True).shape[0] - window_size + 1    
+    n_valid_samples = valid_set_x.get_value(borrow=True).shape[0] - window_size + 1    
+    n_test_samples = test_set_x.get_value(borrow=True).shape[0] - window_size + 1
+    
+    n_in = window_size*3  # number of input units
+    n_out = 7  # number of output units
+
+    ######################
+    # BUILD ACTUAL MODEL #
+    ######################
+    print '... building the model'
+
+    # allocate symbolic variables for the data
+    index = T.lscalar()  
+
+    # generate symbolic variables for input
+    x = T.matrix('x')  # data, presented as window with x, y, x for each sample
+    y = T.iscalar('y')  # labels, presented as int label
+
+    if classifier is None:
+        # construct the logistic regression class
+        classifier = LogisticRegression(input=x, n_in=n_in, n_out=n_out)
+
+    # the cost we minimize during training is the negative log likelihood of
+    # the model in symbolic format
+    cost = classifier.negative_log_likelihood(y)
+
+    # compile a theano function that computes the mistakes that are made by
+    # the model on a minibatch
+    test_model = theano.function(
+        [index],
+        classifier.errors(y),
+        givens={
+            x: test_set_x[index:index + window_size],
+            y: test_set_y[index + window_size - 1]
+        },
+        name="test"
+    )
+
+    validate_model = theano.function(
+        [index],
+        classifier.errors(y),
+        givens={
+            x: valid_set_x[index: index + window_size],
+            y: valid_set_y[index + window_size - 1]
+        },
+        name="validate"
+    )
+
+    #  compile a theano function that returns the cost
+    conj_cost = theano.function(
+        inputs=[index],
+        outputs=[cost, classifier.errors(y), classifier.predict(), y],
+        givens={
+            x: train_set_x[index: index + window_size],
+            y: train_set_y[index + window_size - 1]
+        },
+        name="conj_cost"
+    )
+
+    # compile a theano function that returns the gradient with respect to theta
+    conj_grad = theano.function(
+        [index],
+        T.grad(cost, classifier.theta),
+        givens={
+            x: train_set_x[index: index + window_size],
+            y: train_set_y[index + window_size - 1]
+        },
+        name="conj_grad"
+    )
+    
+    train_confusion_matrix = numpy.zeros((7, 7))
+
+    # creates a function that computes the average cost on the training set
+    def train_fn(theta_value):
+        classifier.theta.set_value(theta_value, borrow=True)
+        cur_train_cost = []
+        cur_train_error =[]
+        for i in xrange(n_train_samples):
+            sample_cost, sample_error, cur_pred, cur_actual = conj_cost(i)
+            cur_train_cost.append(sample_cost)
+            cur_train_error.append(sample_error)
+            train_confusion_matrix[cur_actual][cur_pred] += 1
+        
+        this_train_loss = float(numpy.mean(cur_train_cost))  
+        classifier.train_cost_array.append([])
+        classifier.train_cost_array[-1].append(classifier.epoch)
+        classifier.train_cost_array[-1].append(this_train_loss)
+       
+        classifier.train_error_array.append([])
+        classifier.train_error_array[-1].append(classifier.epoch)
+        classifier.train_error_array[-1].append(float(numpy.mean(cur_train_error)*100))
+                
+        classifier.epoch += 1
+        
+        return this_train_loss
+
+    # creates a function that computes the average gradient of cost with
+    # respect to theta
+    def train_fn_grad(theta_value):
+        classifier.theta.set_value(theta_value, borrow=True)
+        grad = conj_grad(0)
+        for i in xrange(1, n_train_samples):
+            grad += conj_grad(i)
+        return grad / n_train_samples
+
+    # creates the validation function
+    def callback(theta_value):
+        classifier.theta.set_value(theta_value, borrow=True)
+        #compute the validation loss
+        validation_losses = [validate_model(i)
+                             for i in xrange(n_valid_samples)]
+        this_validation_loss = float(numpy.mean(validation_losses) * 100.,)
+        print('validation error %f %%' % (this_validation_loss))
+        classifier.valid_error_array.append([])
+        classifier.valid_error_array[-1].append(classifier.epoch)
+        classifier.valid_error_array[-1].append(this_validation_loss)
+
+        # check if it is better then best validation score got until now
+        if this_validation_loss < classifier.validation_scores[0]:
+            # if so, replace the old one, and compute the score on the
+            # testing dataset
+            classifier.validation_scores[0] = this_validation_loss
+            test_losses = [test_model(i)
+                           for i in xrange(n_test_samples)]
+            classifier.validation_scores[1] = float(numpy.mean(test_losses))
+            classifier.test_error_array.append([])
+            classifier.test_error_array[-1].append(classifier.epoch)
+            classifier.test_error_array[-1].append(classifier.validation_scores[1])
+
+    ###############
+    # TRAIN MODEL #
+    ###############
+
+    # using scipy conjugate gradient optimizer
+    import scipy.optimize
+    print ("Optimizing using scipy.optimize.fmin_cg...")
+    best_theta = scipy.optimize.fmin_cg(
+        f=train_fn,
+        x0=numpy.zeros((n_in + 1) * n_out, dtype=x.dtype),
+        fprime=train_fn_grad,
+        callback=callback,
+        disp=0,
+        maxiter=n_epochs
+    )
+    return classifier
+
+def test_params(learning_rate,
+                n_epochs,
+                window_size,
+                datasets,
+                output_folder,
+                base_folder):
+    """
+    Demonstrate stochastic gradient descent optimization of a log-linear
+    model
+    This is demonstrated on ICHI.
+    :type learning_rate: float
+    :param learning_rate: learning rate used (factor for the stochastic
+                          gradient)
+    :type n_epochs: int
+    :param n_epochs: maximal number of epochs to run the optimizer
+    """    
+    
+    ######################
+    # BUILD ACTUAL MODEL #
+    ######################
+    print '... building the model'
+
+    start_time = time.clock()
+
+    
+    updated_classifier = train_sgd(learning_rate=learning_rate,
+                                   window_size=window_size,
+                                   n_epochs=n_epochs,
+                                   datasets=datasets)
+    
+                                     
+    updated_classifier = train_cg(datasets=datasets,
+                                     window_size=window_size,
+                                     n_epochs=n_epochs)
+    '''
+
+    visualize_logistic(train_cost=updated_classifier.train_cost_array,
+                    train_error=updated_classifier.train_error_array, 
+                    valid_error=updated_classifier.valid_error_array,
+                    test_error=updated_classifier.test_error_array,
                     window_size=window_size,
                     learning_rate=learning_rate,
                     output_folder=output_folder,
                     base_folder=base_folder)
+    '''
     end_time = time.clock()
     print(
         (
            'Optimization complete with best validation score of %f %%,'
            'with test performance %f %%'
         )
-        % (best_validation_loss, test_score)
+        % (updated_classifier.validation_scores[0],
+           updated_classifier.validation_scores[1])
     )
     print 'The code run for %d epochs, with %f epochs/sec' % (
-        epoch, 1. * epoch / (end_time - start_time))
+        updated_classifier.epoch, 1. * updated_classifier.epoch / (end_time - start_time))
     print >> sys.stderr, ('The code for file ' +
                          os.path.split(__file__)[1] +
                               ' ran for %.1fs' % ((end_time - start_time)))
-    print(train_confusion_matrix, 'train_confusion_matrix')
-    print(valid_confusion_matrix, 'valid_confusion_matrix')
-    print(test_confusion_matrix, 'test_confusion_matrix')
     
 def test_all_params():
     learning_rates = [0.0001]
