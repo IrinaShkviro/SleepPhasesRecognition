@@ -292,15 +292,13 @@ class SdA(object):
         n_test_samples = test_set_x.get_value(borrow=True).shape[0] - window_size + 1
 
         index = T.lscalar('index')  # index to a sample
-        x = T.matrix('x')  # data, presented as window with x, y, x for each sample
-        y = T.iscalar('y')  # labels, presented as int label
 
         validate_model = theano.function(
             [index],
             outputs=self.errors,
             givens={
-                x: valid_set_x[index: index + window_size],
-                y: valid_set_y[index + window_size - 1]
+                self.x: valid_set_x[index: index + window_size],
+                self.y: valid_set_y[index + window_size - 1]
             },
             name='valid'
         )
@@ -318,7 +316,7 @@ class SdA(object):
         #  compile a theano function that returns the cost of a minibatch
         conj_cost = theano.function(
             [index],
-            outputs=self.finetune_cost,
+            outputs=[self.finetune_cost, self.errors],
             givens={
                 self.x: train_set_x[index: index + window_size],
                 self.y: train_set_y[index + window_size - 1]
@@ -347,7 +345,7 @@ class SdA(object):
             cur_train_cost = []
             cur_train_error =[]
             for i in xrange(n_train_samples):
-                sample_cost, sample_error, cur_pred, cur_actual = conj_cost(i)
+                sample_cost, sample_error = conj_cost(i)
                 cur_train_cost.append(sample_cost)
                 cur_train_error.append(sample_error)
             
@@ -447,34 +445,80 @@ def test_SdA(datasets,
     #########################
     # PRETRAINING THE MODEL #
     #########################
+    '''
     print '... getting the pretraining functions'
     pretraining_fns, pretraining_updates = sda.pretraining_functions(train_set_x=train_set_x,
                                                 window_size=window_size)
-
+    '''
     print '... pre-training the model'
     # using scipy conjugate gradient optimizer
     import scipy.optimize
     print ("Optimizing using scipy.optimize.fmin_cg...")
 
     start_time = timeit.default_timer()
-    
+    index = T.lscalar('index')
+    n_train_samples = train_set_x.get_value(borrow=True).shape[0] - window_size + 1
     ## Pre-train layer-wise
     corruption_levels = [.1, .2]
-    for i in xrange(sda.n_layers):
+    for da_index in xrange(sda.n_layers):
+        cur_dA=sda.dA_layers[da_index]
+        # get the cost and the updates list
+        cost = cur_dA.get_cost(corruption_levels[da_index])
+        
+        # compile a theano function that returns the cost
+        sample_cost = theano.function(
+            inputs=[index],
+            outputs=cost,
+            givens={
+                sda.x: train_set_x[index: index + window_size]
+            },
+            on_unused_input='warn'
+        )
+        
+        # compile a theano function that returns the gradient with respect to theta
+        sample_grad = theano.function(
+            inputs=[index],
+            outputs=T.grad(cost, cur_dA.theta),
+            givens={
+                sda.x: train_set_x[index: index + window_size]
+            },
+            on_unused_input='warn'
+        )
+      
+        def train_fn(theta_value):
+            sda.dA_layers[da_index].theta.set_value(theta_value, borrow=True)
+            train_losses = [sample_cost(i)
+                            for i in xrange(n_train_samples)]
+            this_train_loss = float(numpy.mean(train_losses))  
+            sda.dA_layers[da_index].train_cost_array.append([])
+            sda.dA_layers[da_index].train_cost_array[-1].append(sda.dA_layers[da_index].epoch)
+            sda.dA_layers[da_index].train_cost_array[-1].append(this_train_loss)
+            sda.dA_layers[da_index].epoch += 1
+
+            return numpy.mean(train_losses)
+            
+            
+        def train_fn_grad(theta_value):
+            sda.dA_layers[da_index].theta.set_value(theta_value, borrow=True)
+            grad = sample_grad(0)
+            for i in xrange(1, n_train_samples):
+                grad += sample_grad(i)
+            return grad / n_train_samples
+
         best_w_b = scipy.optimize.fmin_cg(
-            f=pretraining_fns[i],
-            x0=numpy.zeros((sda.dA_layers[i].n_visible + 1) * sda.dA_layers[i].n_hidden,
+            f=train_fn,
+            x0=numpy.zeros((sda.dA_layers[da_index].n_visible + 1) * sda.dA_layers[da_index].n_hidden,
                            dtype=x.dtype),
-            fprime=pretraining_updates[i],
+            fprime=train_fn_grad,
             disp=0,
             maxiter=pretraining_epochs
         )
-        visualize_pretraining(train_cost=sda.dA_layers[i].train_cost_array,
+        visualize_pretraining(train_cost=sda.dA_layers[da_index].train_cost_array,
                               window_size=window_size,
                               learning_rate=0,
-                              corruption_level=corruption_levels[i],
-                              n_hidden=sda.dA_layers[i].n_hidden,
-                              da_layer=i,
+                              corruption_level=corruption_levels[da_index],
+                              n_hidden=sda.dA_layers[da_index].n_hidden,
+                              da_layer=da_index,
                               datasets_folder=output_folder,
                               base_folder=base_folder)
 
@@ -555,7 +599,7 @@ def test_all_params():
                  output_folder=output_folder,
                  base_folder='SdA_cg_plots',
                  window_size=ws,
-                 pretraining_epochs=15,
+                 pretraining_epochs=100,
                  training_epochs=1000)
 
 if __name__ == '__main__':
