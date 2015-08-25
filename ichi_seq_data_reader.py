@@ -21,7 +21,7 @@ class ICHISeqDataReader(object):
         
         self.sequence_index = 0
         # path to folder with data
-        dataset = 'D:\Irka\Project\data' # "./data/7/ICHI14_data_set/data"
+        dataset = 'H:\Irka\Project\data' # "./data/7/ICHI14_data_set/data"
         self.init_sequence(dataset)
     
     # read all docs in sequence
@@ -123,3 +123,87 @@ class ICHISeqDataReader(object):
         sequence_matrix = numpy.asarray(zip(data.x,data.y,data.z, data.gt))
   
         return sequence_matrix
+        
+        # read all docs in sequence
+    def read_all_seqs_on_labels(self):
+        all_visible_seqs = []
+        for label in xrange(7):
+            # visible_seqs = array[count of labels][size of each label in doc][data.x, data.y, data.z, data.gt]
+            visible_seqs = self.get_sequence_on_labels()
+            #visible_seqs[label] is ndarray
+    
+            # d_x1 = array[size of 1st doc][x, y, z]
+            d_x1 = preprocess_sequence(visible_seqs[label][:, 0:self.n_in])
+            
+            # d_y1 = array[size of 1st doc][labels]
+            d_y1 = visible_seqs[label][:, self.n_in:self.n_in+1].reshape(-1)
+    
+            # data_x_ar = union for (x, y, z) coordinates in all files
+            data_x = d_x1
+            
+            # data_y_ar = union for labels in all files
+            data_y = d_y1
+            
+            for t in range(len(self.seqs) - 1):
+                # sequence_matrix = array[size of t-th doc][data.x, data.y, data.z, data.gt]
+                visible_seqs = self.get_sequence_on_labels()
+    
+                # d_x = array[size of t-th doc][x, y, z]
+                d_x = preprocess_sequence(visible_seqs[label][:, 0:self.n_in])
+                
+                # d_y = array[size of t-th doc][labels]
+                d_y = visible_seqs[label][:, self.n_in:self.n_in+1].reshape(-1)
+                
+                # concatenate data in current file with data in prev files in one array
+                data_x = numpy.vstack((data_x, d_x))
+                data_y = numpy.concatenate((data_y, d_y))
+                                
+                gc.collect()
+            
+            set_x = theano.shared(numpy.asarray(data_x,
+                                                       dtype=theano.config.floatX),
+                                         borrow=True)
+            set_y = T.cast(theano.shared(numpy.asarray(data_y,
+                                                       dtype=theano.config.floatX),
+                                         borrow=True), 'int32')
+            all_visible_seqs.append((set_x, set_y))
+            
+        print(all_visible_seqs)
+        return all_visible_seqs
+        
+       # define current file for reading
+    def get_sequence_on_labels(self):
+        
+        if self.sequence_index>=len(self.sequence_files):
+            self.sequence_index = 0
+            
+        sequence_file = self.sequence_files[self.sequence_index]
+        self.sequence_index = self.sequence_index+1
+        #print sequence_file
+        return self.read_sequence_on_labels(sequence_file)
+        
+    #read sequence_file and return array of data (x, y, z, gt - label)
+    def read_sequence_on_labels(self, sequence_file):
+        # load files with data as records
+        data = numpy.load(sequence_file).view(numpy.recarray)
+    
+        data.gt[numpy.where(data.gt==7)] = 4
+        
+        # convert records with data to array with x, y, z coordinates and gt as label of class
+        sequence_matrix = numpy.array(zip(data.x,data.y,data.z, data.gt))
+        visible_seqs=[]
+        
+        for label in xrange(7):
+            visible_seqs.append([])
+        
+        for row in sequence_matrix:
+            label = row[3]
+            #visible_seqs[label].append(row)
+            if visible_seqs[label]==[]:
+                visible_seqs[label] = row
+            else:           
+                visible_seqs[label] = numpy.vstack((visible_seqs[label], row))
+  
+        return visible_seqs
+
+  
