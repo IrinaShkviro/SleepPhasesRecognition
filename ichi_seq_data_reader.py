@@ -131,35 +131,42 @@ class ICHISeqDataReader(object):
             # visible_seqs = array[count of labels][size of each label in doc][data.x, data.y, data.z, data.gt]
             visible_seqs = self.get_sequence_on_labels()
             #visible_seqs[label] is ndarray
-    
-            # d_x1 = array[size of 1st doc][x, y, z]
-            d_x1 = preprocess_sequence(visible_seqs[label][:, 0:self.n_in])
             
-            # d_y1 = array[size of 1st doc][labels]
-            d_y1 = visible_seqs[label][:, self.n_in:self.n_in+1].reshape(-1)
-    
-            # data_x_ar = union for (x, y, z) coordinates in all files
-            data_x = d_x1
-            
-            # data_y_ar = union for labels in all files
-            data_y = d_y1
+            if visible_seqs[label]!=[]:
+                # d_x1 = array[size of 1st doc][x, y, z]
+                d_x1 = preprocess_sequence(visible_seqs[label][:, 0:self.n_in])
+                
+                # d_y1 = array[size of 1st doc][labels]
+                d_y1 = visible_seqs[label][:, self.n_in:self.n_in+1].reshape(-1)
+        
+                # data_x_ar = union for (x, y, z) coordinates in all files
+                data_x = d_x1
+                
+                # data_y_ar = union for labels in all files
+                data_y = d_y1
+            else:
+                data_x=[]
+                data_y=[]
             
             for t in range(len(self.seqs) - 1):
                 # sequence_matrix = array[size of t-th doc][data.x, data.y, data.z, data.gt]
                 visible_seqs = self.get_sequence_on_labels()
-    
-                # d_x = array[size of t-th doc][x, y, z]
-                d_x = preprocess_sequence(visible_seqs[label][:, 0:self.n_in])
-                
-                # d_y = array[size of t-th doc][labels]
-                d_y = visible_seqs[label][:, self.n_in:self.n_in+1].reshape(-1)
-                
-                # concatenate data in current file with data in prev files in one array
-                data_x = numpy.vstack((data_x, d_x))
-                data_y = numpy.concatenate((data_y, d_y))
-                                
+                    
+                print(label, 'label')
+                print(visible_seqs[label])
+                if visible_seqs[label]!=[]:
+                    # d_x = array[size of t-th doc][x, y, z]
+                    d_x = preprocess_sequence(visible_seqs[label][:, 0:self.n_in])
+                        
+                    # d_y = array[size of t-th doc][labels]
+                    d_y = visible_seqs[label][:, self.n_in:self.n_in+1].reshape(-1)
+                        
+                    # concatenate data in current file with data in prev files in one array
+                    data_x = numpy.vstack((data_x, d_x))
+                    data_y = numpy.concatenate((data_y, d_y))
+                                    
                 gc.collect()
-            
+                    
             set_x = theano.shared(numpy.asarray(data_x,
                                                        dtype=theano.config.floatX),
                                          borrow=True)
@@ -185,6 +192,7 @@ class ICHISeqDataReader(object):
     #read sequence_file and return array of data (x, y, z, gt - label)
     def read_sequence_on_labels(self, sequence_file):
         # load files with data as records
+        print(sequence_file, 'seq_file')
         data = numpy.load(sequence_file).view(numpy.recarray)
     
         data.gt[numpy.where(data.gt==7)] = 4
