@@ -23,12 +23,37 @@ import theano
 import theano.tensor as T
 
 from ichi_seq_data_reader import ICHISeqDataReader
+from HMM_for_one_label import HMM_for_one_label
 
-"""
 class HMM(object):
-    def _init_(self, n_visible, n_hidden, input, label):
-        
-"""       
+    def _init_(
+        self,
+        n_visibles,
+        n_hiddens,
+        visible_seqs,
+        n_epochs,
+        train_data
+    ):
+        """ This class is made to train HMMs for each label definetly.
+        :param n_visibles: array where each element point on count of 
+                visible elements for each HMM
+        :param n_hiddens: array where each element point on count of 
+                hidden elements for each HMM
+        :param visible_seqs: array with input for each HMM
+        :param n_epochs: array which point on training epochs count for each HMM
+        """
+
+        HMMs=[]
+        for label in xrange(7):
+            current_HMM = HMM_for_one_label(n_visible=n_visibles[label],
+                                          n_hidden=n_hiddens[label],
+                                          input=visible_seqs[label],
+                                          label=label,
+                                          n_epoch=n_epochs[label],
+                                          patient_list=train_data)
+            current_HMM.train()
+            HMMs.append(current_HMM)
+       
 def train():
     #get data divided on sequences with respect to labels
     #visible_seqs = ...

@@ -16,7 +16,7 @@ import theano
 import theano.tensor as T
 
 class HMM_for_one_label(object):
-    def _init_(self, n_visible, n_hidden, input, label):
+    def _init_(self, n_visible, n_hidden, input, label, n_epoch, patient_list):
         
         self.Pi=theano.shared(
             value=numpy.zeros(
@@ -48,6 +48,8 @@ class HMM_for_one_label(object):
         
         self.input=input
         self.n_hidden=n_hidden
+        self.epochs=n_epoch
+        self.patient_list=patient_list
         self.alpha=[]
         self.betta=[]
         # gamma is matrix (time*n_hidden)
@@ -120,3 +122,7 @@ class HMM_for_one_label(object):
             if (self.values[0]>numpy.mean(prob)):
                 self.values[0]=numpy.mean(prob)
                 self.bestParams=self.params
+                
+    def train(self):
+        for epoch in self.epochs:
+            self.train_one_epoch(visible_seqs=self.input, patients=self.patient_list)
