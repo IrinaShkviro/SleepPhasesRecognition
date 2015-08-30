@@ -26,13 +26,13 @@ from ichi_seq_data_reader import ICHISeqDataReader
 from HMM_for_one_label import HMM_for_one_label
 
 class HMM(object):
-    def _init_(
+    def __init__(
         self,
         n_visibles,
         n_hiddens,
         visible_seqs,
         n_epochs,
-        train_data
+        train_data_names
     ):
         """ This class is made to train HMMs for each label definetly.
         :param n_visibles: array where each element point on count of 
@@ -43,33 +43,46 @@ class HMM(object):
         :param n_epochs: array which point on training epochs count for each HMM
         """
 
-        HMMs=[]
+        self.HMMs=[]
         for label in xrange(7):
             current_HMM = HMM_for_one_label(n_visible=n_visibles[label],
                                           n_hidden=n_hiddens[label],
                                           input=visible_seqs[label],
-                                          label=label,
                                           n_epoch=n_epochs[label],
-                                          patient_list=train_data)
+                                          patient_list=train_data_names)
             current_HMM.train()
-            HMMs.append(current_HMM)
+            self.HMMs.append(current_HMM)
+            
+    def recognition(self):
+        return 0
        
 def train():
-    #get data divided on sequences with respect to labels
-    #visible_seqs = ...
-        
-    train_data = ['p10a','p011','p013','p014','p020','p022','p040','p045','p048']
+    train_data_names = ['p10a','p011','p013','p014','p020','p022','p040','p045','p048']
     valid_data = ['p09b','p023','p035','p038']
     test_data = ['p09a','p033']
         
-    train_reader = ICHISeqDataReader(train_data)
-    train_visible_seqs = train_reader.read_all_seqs_on_labels()
+    train_reader = ICHISeqDataReader(train_data_names)
+    #get data divided on sequences with respect to labels
+    train_visible_seqs = train_reader.read_all_and_divide()
         
     valid_reader = ICHISeqDataReader(valid_data)
-    valid_visible_seqs = valid_reader.read_all_seqs_on_labels()
+    valid_visible_seqs = valid_reader.read_all_and_divide()
     
     test_reader = ICHISeqDataReader(test_data)
-    test_visible_seqs = test_reader.read_all_seqs_on_labels()
+    test_visible_seqs = test_reader.read_all_and_divide()
+    
+    rank = 1
+    base = pow(10, rank) + 1
+    n_visible_labels = pow(base, 3)
+    n_visibles = [n_visible_labels] * 7
+    n_hiddens = [200] * 7
+    n_epochs = [1] * 7
+    
+    trained_HMM = HMM(n_visibles=n_visibles,
+                      n_hiddens=n_hiddens,
+                      visible_seqs=train_visible_seqs,
+                      n_epochs=n_epochs,
+                      train_data_names=train_data_names)
         
 if __name__ == '__main__':
     train()
