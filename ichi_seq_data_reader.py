@@ -4,7 +4,7 @@ import gc
 import theano
 import theano.tensor as T
 
-from preprocess import preprocess_sequence
+from preprocess import preprocess_sequence, preprocess_for_HMM
 
 class ICHISeqDataReader(object):
     def __init__(self, seqs_for_analyse):
@@ -134,7 +134,7 @@ class ICHISeqDataReader(object):
             
             if visible_seqs[label]!=[]:
                 # d_x1 = array[size of 1st doc][x, y, z]
-                d_x1 = preprocess_sequence(visible_seqs[label][:, 0:self.n_in])
+                d_x1 = preprocess_for_HMM(visible_seqs[label][:, 0:self.n_in])
                 
                 # d_y1 = array[size of 1st doc][labels]
                 d_y1 = visible_seqs[label][:, self.n_in:self.n_in+1].reshape(-1)
@@ -152,17 +152,17 @@ class ICHISeqDataReader(object):
                 # sequence_matrix = array[size of t-th doc][data.x, data.y, data.z, data.gt]
                 visible_seqs = self.get_sequence_on_labels()
                     
-                print(label, 'label')
-                print(visible_seqs[label])
+
                 if visible_seqs[label]!=[]:
-                    # d_x = array[size of t-th doc][x, y, z]
-                    d_x = preprocess_sequence(visible_seqs[label][:, 0:self.n_in])
+                    # d_x = array[size of t-th doc]
+                    # consider new labels for data
+                    d_x = preprocess_for_HMM(visible_seqs[label][:, 0:self.n_in])
                         
                     # d_y = array[size of t-th doc][labels]
                     d_y = visible_seqs[label][:, self.n_in:self.n_in+1].reshape(-1)
                         
                     # concatenate data in current file with data in prev files in one array
-                    data_x = numpy.vstack((data_x, d_x))
+                    data_x = numpy.concatenate((data_x, d_x))
                     data_y = numpy.concatenate((data_y, d_y))
                                     
                 gc.collect()
@@ -175,7 +175,6 @@ class ICHISeqDataReader(object):
                                          borrow=True), 'int32')
             all_visible_seqs.append((set_x, set_y))
             
-        print(all_visible_seqs)
         return all_visible_seqs
         
        # define current file for reading
@@ -186,13 +185,12 @@ class ICHISeqDataReader(object):
             
         sequence_file = self.sequence_files[self.sequence_index]
         self.sequence_index = self.sequence_index+1
-        #print sequence_file
+        print(sequence_file, 'file')
         return self.read_sequence_on_labels(sequence_file)
         
     #read sequence_file and return array of data (x, y, z, gt - label)
     def read_sequence_on_labels(self, sequence_file):
         # load files with data as records
-        print(sequence_file, 'seq_file')
         data = numpy.load(sequence_file).view(numpy.recarray)
     
         data.gt[numpy.where(data.gt==7)] = 4
@@ -214,4 +212,53 @@ class ICHISeqDataReader(object):
   
         return visible_seqs
 
-  
+    # read all docs in sequence
+    def read_all_and_divide(self):
+        # sequence_matrix = array[size of 1st doc][data.x, data.y, data.z, data.gt]
+        sequence_matrix = self.get_sequence()
+
+        # d_x1 = array[size of 1st doc][x, y, z]
+        d_x1 = preprocess_for_HMM(sequence_matrix[:, 0:self.n_in])
+        
+        # d_y1 = array[size of 1st doc][labels]
+        d_y1 = sequence_matrix[:, self.n_in:self.n_in+1].reshape(-1)
+
+        # data_x_ar = union for (x, y, z) coordinates in all files
+        data_x = d_x1
+        
+        # data_y_ar = union for labels in all files
+        data_y = d_y1
+        
+        for t in range(len(self.seqs) - 1):
+            # sequence_matrix = array[size of t-th doc][data.x, data.y, data.z, data.gt]
+            sequence_matrix = self.get_sequence()
+
+            # d_x = array[size of t-th doc][x, y, z]
+            d_x = preprocess_for_HMM(sequence_matrix[:, 0:self.n_in])
+            
+            # d_y = array[size of t-th doc][labels]
+            d_y = sequence_matrix[:, self.n_in:self.n_in+1].reshape(-1)
+            
+            # concatenate data in current file with data in prev files in one array
+            data_x = numpy.concatenate((data_x, d_x))
+            data_y = numpy.concatenate((data_y, d_y))
+                            
+            gc.collect()
+            
+        all_data = zip(data_x, data_y)
+        all_visible_seqs = []
+        
+        for label in xrange(7):
+            data_x_for_cur_label=[]
+            for row in all_data:
+                if row[1] == label:
+                    data_x_for_cur_label.append(row[0])
+            #data_for_cur_label = all_data[numpy.where(all_data[:,1] == label)]
+            """            
+            set_x = theano.shared(numpy.asarray(data_x_for_cur_label,
+                                                       dtype=theano.config.floatX),
+                                         borrow=True)
+            """
+            all_visible_seqs.append((data_x_for_cur_label, label))
+        
+        return all_visible_seqs
