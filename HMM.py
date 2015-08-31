@@ -25,14 +25,18 @@ import theano.tensor as T
 from ichi_seq_data_reader import ICHISeqDataReader
 from HMM_for_one_label import HMM_for_one_label
 
+count_of_hmm = 7
+
 class HMM(object):
     def __init__(
         self,
         n_visibles,
         n_hiddens,
-        visible_seqs,
+        train_seqs,
         n_epochs,
-        train_data_names
+        train_data_names,
+        valid_seqs,
+        test_seqs
     ):
         """ This class is made to train HMMs for each label definetly.
         :param n_visibles: array where each element point on count of 
@@ -44,17 +48,22 @@ class HMM(object):
         """
 
         self.HMMs=[]
-        for label in xrange(7):
+        for label in xrange(count_of_hmm):
             current_HMM = HMM_for_one_label(n_visible=n_visibles[label],
                                           n_hidden=n_hiddens[label],
-                                          input=visible_seqs[label],
+                                          train_data=train_seqs[label],
                                           n_epoch=n_epochs[label],
-                                          patient_list=train_data_names)
+                                          patient_list=train_data_names,
+                                          valid_data = valid_seqs[label],
+                                          test_data = test_seqs[label]
+                                          )
             current_HMM.train()
             self.HMMs.append(current_HMM)
             
-    def recognition(self):
-        return 0
+    def recognition(self, visible_seq):
+        probabilities = [self.HMMs[i].probability_for_seq(visible_seq) 
+                            for i in xrange(count_of_hmm)]
+        return numpy.argmax(probabilities)
        
 def train():
     train_data_names = ['p10a','p011','p013','p014','p020','p022','p040','p045','p048']
@@ -80,9 +89,11 @@ def train():
     
     trained_HMM = HMM(n_visibles=n_visibles,
                       n_hiddens=n_hiddens,
-                      visible_seqs=train_visible_seqs,
+                      train_seqs=train_visible_seqs,
                       n_epochs=n_epochs,
-                      train_data_names=train_data_names)
+                      train_data_names=train_data_names,
+                      valid_seqs = valid_visible_seqs,
+                      test_seqs = test_visible_seqs)
         
 if __name__ == '__main__':
     train()
