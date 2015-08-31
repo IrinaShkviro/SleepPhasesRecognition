@@ -70,6 +70,43 @@ def visualize_logistic(train_cost, train_error, valid_error, test_error,
         os.chdir('../')
         os.chdir('../')
         
+def visualize_hmm_for_one_label(train_error,
+                    label, output_folder, base_folder):
+        print "Visualizer visualize_costs"
+        
+        if not os.path.isdir(base_folder):
+            os.makedirs(base_folder)
+        os.chdir(base_folder)
+                
+        if not os.path.isdir(output_folder):
+            os.makedirs(output_folder)
+        os.chdir(output_folder)
+        print('Set output')
+                        
+        train_error=numpy.asarray(train_error)
+        print('converted to arrays')
+                
+        # print errors
+        plt.figure(1)
+        plt.plot(train_error[:, 0],train_error[:,1],label='train_error')
+        print('plots created, start decor')        
+        
+        # decorative part       
+        plt.xlabel('epochs')
+        plt.ylabel('error(%)')
+        plt.title(
+            ('Label: %i')
+            % (label)
+        )
+        plt.legend(loc='upper left')
+        plot_name = ('label %i.png')%(label)
+        plt.savefig(plot_name, dpi=200)
+        plt.close()
+        print('errors visualized')
+                
+        os.chdir('../')
+        os.chdir('../')
+        
 def visualize_da(train_cost, window_size, learning_rate,
                  corruption_level, n_hidden, output_folder, base_folder):
         print "Visualizer visualize_costs"
@@ -94,7 +131,7 @@ def visualize_da(train_cost, window_size, learning_rate,
         # print errors
         plt.figure(1)
         plt.plot(train_cost[:, 0],train_cost[:,1],label='train_cost')
-        print('plots created, start decor')        
+        print('plots created, start decor')      
         
         # decorative part       
         plt.xlabel('epochs')
@@ -144,12 +181,12 @@ def visualize_pretraining(train_cost, window_size, learning_rate, corruption_lev
         os.chdir(example_folder)
                         
         train_cost=numpy.asarray(train_cost)
-        print('converted to array')        
+        print('converted to array')      
         
         # print errors
         plt.figure(1)
         plt.plot(train_cost[:, 0],train_cost[:,1],label='train_cost')
-        print('plot created, start decor')        
+        print('plot created, start decor')
         
         # decorative part       
         plt.xlabel('epochs')
@@ -166,10 +203,10 @@ def visualize_pretraining(train_cost, window_size, learning_rate, corruption_lev
             )
         plt.legend(loc='upper left')
         if learning_rate<=0:
-            plot_name = ('Pretrain layer: %i CL %f Hid %i.png') \
+            plot_name = ('Pretrain layer %i CL %f Hid %i.png') \
                 % (da_layer, corruption_level, n_hidden)
         else:
-            plot_name = ('Pretrain layer: %i LR %f CL %f Hid %i.png') \
+            plot_name = ('Pretrain layer %i LR %f CL %f Hid %i.png') \
                 % (da_layer, learning_rate, corruption_level, n_hidden)
         plt.savefig(plot_name, dpi=200)
         plt.close()
