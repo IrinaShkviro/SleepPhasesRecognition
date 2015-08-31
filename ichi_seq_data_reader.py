@@ -21,7 +21,7 @@ class ICHISeqDataReader(object):
         
         self.sequence_index = 0
         # path to folder with data
-        dataset = 'H:\Irka\Project\data' # "./data/7/ICHI14_data_set/data"
+        dataset = 'D:\Irka\Project\data' # "./data/7/ICHI14_data_set/data"
         self.init_sequence(dataset)
     
     # read all docs in sequence

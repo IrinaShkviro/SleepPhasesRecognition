@@ -126,7 +126,8 @@ class HMM_for_one_label(object):
         for t in xrange(self.max_time-1):
             for j in xrange(self.n_hidden):
                 T.set_subtensor(self.alpha[t+1,j],
-                                numpy.dot(self.alpha[t,:], self.A[:,j])*self.B[j, self.visible_seq[t+1]])
+                                T.dot(self.alpha[t,:], self.A[:,j])*\
+                                self.B[j, self.visible_seq[t+1]])
               
         T.set_subtensor(self.betta[self.max_time - 1], [1] * self.n_hidden)
         for t in reversed(xrange(self.max_time - 1)):
