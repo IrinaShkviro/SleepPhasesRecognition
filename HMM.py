@@ -49,6 +49,7 @@ class HMM(object):
 
         self.HMMs=[]
         for label in xrange(count_of_hmm):
+            print(label, 'label in cycle')
             current_HMM = HMM_for_one_label(n_visible=n_visibles[label],
                                           n_hidden=n_hiddens[label],
                                           train_data=train_seqs[label],
@@ -57,8 +58,9 @@ class HMM(object):
                                           valid_data = valid_seqs[label],
                                           test_data = test_seqs[label]
                                           )
-            current_HMM.train()
+            #current_HMM.train()
             self.HMMs.append(current_HMM)
+            print(label, 'label in cycle')
             
     def recognition(self, visible_seq):
         probabilities = [self.HMMs[i].probability_for_seq(visible_seq) 
@@ -80,13 +82,15 @@ def train():
     test_reader = ICHISeqDataReader(test_data)
     test_visible_seqs = test_reader.read_all_and_divide()
     
+    print('data is got')
+    
     rank = 1
     base = pow(10, rank) + 1
     n_visible_labels = pow(base, 3)
     n_visibles = [n_visible_labels] * 7
     n_hiddens = [200] * 7
     n_epochs = [1] * 7
-    
+
     trained_HMM = HMM(n_visibles=n_visibles,
                       n_hiddens=n_hiddens,
                       train_seqs=train_visible_seqs,
@@ -94,6 +98,8 @@ def train():
                       train_data_names=train_data_names,
                       valid_seqs = valid_visible_seqs,
                       test_seqs = test_visible_seqs)
-        
+                      
+    print('Hmm created')
+   
 if __name__ == '__main__':
     train()
