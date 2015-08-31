@@ -1,5 +1,7 @@
 import numpy
 from os import walk
+import theano
+import theano.tensor as T
 
 def preprocess_sequence(sequence_matrix):
     """
@@ -34,3 +36,19 @@ def preprocess_for_HMM(sequence_matrix):
         cur_value = int(row[0]*pow(base, 2) + row[1]*base + row[2] - min_label)
         data_labels.append(cur_value)    
     return data_labels
+    
+def generate_random_probabilities(length):
+    #generate randow values in interval [0; 99]
+    full_array = [numpy.random.randint(0, 100) for i in xrange(length)]
+    random_sum = numpy.sum(full_array) * 1.0
+    normalized_array = full_array/random_sum
+    return normalized_array
+    
+def generate_probabilities_for_matrix(x_length, y_length):
+    result_matrix=[]
+    for row in xrange(x_length):
+        result_matrix.append(generate_random_probabilities(y_length))
+    return result_matrix
+    
+if __name__ == '__main__':
+    print('0')
