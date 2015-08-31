@@ -14,9 +14,11 @@ import numpy
 
 import theano
 import theano.tensor as T
+from MyVisualizer import visualize_hmm_for_one_label
 
 class HMM_for_one_label(object):
-    def __init__(self, n_visible, n_hidden, input, n_epoch, patient_list):
+    def __init__(self, n_visible, n_hidden, train_data, n_epoch, patient_list,
+                 valid_data, test_data):
         
         #Pi is matrix which consider probabilities of each hidden state 
         #in start time
@@ -29,7 +31,7 @@ class HMM_for_one_label(object):
             borrow=True
         )
         
-        self.label=input[1]
+        self.label=train_data[1]
         self.A=theano.shared(
             value=numpy.zeros(
                 (n_hidden, n_hidden),
@@ -50,9 +52,8 @@ class HMM_for_one_label(object):
             borrow=True
         )
         
-        self.visible_seq=input[0]
-        self.max_time = len(self.visible_seq)
-        print(self.visible_seq, 'input')
+        self.train_visible_seq=train_data[0]
+        self.max_time = len(self.train_visible_seq)
         self.n_visible = n_visible
         self.n_hidden=n_hidden
         self.epochs=n_epoch
@@ -97,12 +98,40 @@ class HMM_for_one_label(object):
         self.train_probability = 0
         self.bestParams=self.params
         
-    def probability_for_cur_model(self):
+        self.train_error_array=[]
+        self.valid_error_array=[]
+        self.test_error_array=[]
+      
+    def update_alpha(self, visible_seq):
+                #generate probabilities observe visible_seq[0] in initial time
+        for j in xrange(self.n_hidden):
+            T.set_subtensor(self.alpha[0, j], self.Pi[j] * self.B[j, visible_seq[0]])
+            
+        for t in xrange(self.max_time-1):
+            for j in xrange(self.n_hidden):
+                T.set_subtensor(self.alpha[t+1,j],
+                                T.dot(self.alpha[t,:], self.A[:,j])*self.B[j, visible_seq[t+1]])
+
+    def probability_for_seq(self, visible_seq):
+        self.update_alpha(visible_seq)
+        return self.probability()
+        
+    def probability(self):
         return T.sum(self.alpha[-1])
      
     def train(self):
         for epoch in xrange(self.epochs):
             self.train_one_epoch()
+            self.train_error_array.append([])
+            self.train_error_array[-1].append(float(epoch))
+            self.train_error_array[-1].append(float(self.probability()))
+            
+        output_folder=('[%s]')%(",".join(self.patient_list))
+            
+        visualize_hmm_for_one_label(train_error = self.train_error_array,
+                                    label = self.label,
+                                    output_folder = output_folder,
+                                    base_folder ='hmm_plots')
             
     def train_one_epoch(self):
         """
@@ -115,36 +144,29 @@ class HMM_for_one_label(object):
         self.get_best_model()
         
     def update_params_for_one_patient(self):
-        #generate probabilities observe visible_seq[0] in initial time
-        for j in xrange(self.n_hidden):
-            print(self.visible_seq[0], 'self.visible_seq[0]')
-            print(self.Pi[j], 'self.Pi[j]')
-            print(self.B[j, self.visible_seq[0]], 'self.B[j, self.visible_seq[0]]')
-            print(self.alpha[0, j], 'self.alpha[0, j]')
-            T.set_subtensor(self.alpha[0, j], self.Pi[j] * self.B[j, self.visible_seq[0]])
-            
-        for t in xrange(self.max_time-1):
-            for j in xrange(self.n_hidden):
-                T.set_subtensor(self.alpha[t+1,j],
-                                T.dot(self.alpha[t,:], self.A[:,j])*\
-                                self.B[j, self.visible_seq[t+1]])
+        self.update_alpha(self.train_visible_seq)
               
         T.set_subtensor(self.betta[self.max_time - 1], [1] * self.n_hidden)
         for t in reversed(xrange(self.max_time - 1)):
             for i in xrange(self.n_hidden):
                 cur_value = 0
                 for j in xrange(self.n_hidden):
-                    cur_value += self.A[i,j]*self.B[j,self.visible_seq[t+1]]*self.betta[t+1,j]
+                    cur_value += self.A[i,j]*self.B[j,self.train_visible_seq[t+1]]*\
+                    self.betta[t+1,j]
                 T.set_subtensor(self.betta[t,i], cur_value)
                 
         for t in xrange(self.max_time):
             numerator=0
             for i in xrange(self.n_hidden):
                 for j in xrange(self.n_hidden):
-                    numerator+=self.alpha[t,i]*self.A[i,j]*self.B[j, self.visible_seq[t]]*self.betta[t+1,j]
+                    numerator+=self.alpha[t,i]*self.A[i,j]*\
+                    self.B[j, self.train_visible_seq[t]]*self.betta[t+1,j]
             for i in xrange(self.n_hidden):
                 for j in xrange(self.n_hidden):
-                    T.set_subtensor(self.ksi[t,i,j], self.alpha[t,i]*self.A[i,j]*self.B[j, self.visible_seq[t]]*self.betta[t+1,j]/numerator)
+                    T.set_subtensor(self.ksi[t,i,j],
+                                    self.alpha[t,i]*self.A[i,j]*\
+                                    self.B[j, self.train_visible_seq[t]]*\
+                                    self.betta[t+1,j]/numerator)
 
         T.set_subtensor(self.gamma, T.sum(self.ksi, axis=0))
                 
@@ -164,7 +186,7 @@ class HMM_for_one_label(object):
                 denominator=0
                 for t in xrange(self.max_time):
                     denominator+=self.gamma[t,i]
-                    if (self.visible_seq[t]==k):
+                    if (self.train_visible_seq[t]==k):
                         numerator+=self.gamma[t,i]
                 B[i,k]=numerator/denominator
         
@@ -183,7 +205,7 @@ class HMM_for_one_label(object):
             self.train_probabilty=numpy.mean(prob)
             self.bestParams=self.params
         """
-        train_probability = self.probability_for_cur_model()
+        train_probability = self.probability()
         if (self.train_probabilty<train_probability):
             self.train_probabilty=train_probability
             self.bestParams=self.params
