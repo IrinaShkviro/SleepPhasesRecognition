@@ -15,39 +15,38 @@ import numpy
 import theano
 import theano.tensor as T
 from MyVisualizer import visualize_hmm_for_one_label
+from preprocess import generate_random_probabilities, generate_probabilities_for_matrix
 
 class HMM_for_one_label(object):
     def __init__(self, n_visible, n_hidden, train_data, n_epoch, patient_list,
                  valid_data, test_data):
-        
+
         #Pi is matrix which consider probabilities of each hidden state 
         #in start time
         self.Pi=theano.shared(
-            value=numpy.zeros(
-                (n_hidden,),
-                dtype=theano.config.floatX
-            ),
+            value=generate_random_probabilities(n_hidden),
             name='Pi',
             borrow=True
         )
         
         self.label=train_data[1]
+        print(self.label, 'label in init')
+        
+        result_matrix=[]
+        for row in xrange(n_hidden):
+            result_matrix.append(generate_random_probabilities(n_hidden))
+
         self.A=theano.shared(
-            value=numpy.zeros(
-                (n_hidden, n_hidden),
-                dtype=theano.config.floatX
-            ),
+            value=result_matrix,
             name='A',
             borrow=True
         )
+
         
         #B is matrix which consider probabilities observe visible element 
         #from hidden state
         self.B=theano.shared(
-            value=numpy.zeros(
-                (n_hidden, n_visible),
-                dtype=theano.config.floatX
-            ),
+            value=generate_probabilities_for_matrix(n_hidden, n_visible),
             name='B',
             borrow=True
         )
@@ -101,6 +100,7 @@ class HMM_for_one_label(object):
         self.train_error_array=[]
         self.valid_error_array=[]
         self.test_error_array=[]
+        
       
     def update_alpha(self, visible_seq):
                 #generate probabilities observe visible_seq[0] in initial time
@@ -127,7 +127,7 @@ class HMM_for_one_label(object):
             self.train_error_array[-1].append(float(self.probability()))
             
         output_folder=('[%s]')%(",".join(self.patient_list))
-            
+         
         visualize_hmm_for_one_label(train_error = self.train_error_array,
                                     label = self.label,
                                     output_folder = output_folder,
@@ -173,8 +173,8 @@ class HMM_for_one_label(object):
     def get_new_params(self):
         #new Pi is first row in gamma
         Pi=[self.gamma[0]]
-        A=[]
-        B=[]
+        A=numpy.zeros((self.n_hidden, self.n_hidden))
+        B=numpy.zeros((self.n_hidden, self.n_visible))
         
         for i in xrange(self.n_hidden):
             for j in xrange(self.n_hidden):
