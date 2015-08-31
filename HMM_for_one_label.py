@@ -32,12 +32,8 @@ class HMM_for_one_label(object):
         self.label=train_data[1]
         print(self.label, 'label in init')
         
-        result_matrix=[]
-        for row in xrange(n_hidden):
-            result_matrix.append(generate_random_probabilities(n_hidden))
-
         self.A=theano.shared(
-            value=result_matrix,
+            value=generate_probabilities_for_matrix(n_hidden, n_hidden),
             name='A',
             borrow=True
         )
