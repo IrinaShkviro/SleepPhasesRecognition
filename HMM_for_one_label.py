@@ -184,7 +184,7 @@ class HMM_for_one_label(object):
                 denominator=0
                 for t in xrange(self.max_time):
                     denominator+=self.gamma[t,i]
-                    if (self.train_visible_seq[t]==k):
+                    if (int(self.train_visible_seq[t])==k):
                         numerator+=self.gamma[t,i]
                 B[i,k]=numerator/denominator
         
