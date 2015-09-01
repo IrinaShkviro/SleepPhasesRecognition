@@ -58,7 +58,7 @@ class HMM(object):
                                           valid_data = valid_seqs[label],
                                           test_data = test_seqs[label]
                                           )
-            #current_HMM.train()
+            current_HMM.train()
             self.HMMs.append(current_HMM)
             print(label, 'label in cycle')
             
