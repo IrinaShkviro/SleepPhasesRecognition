@@ -21,7 +21,7 @@ class ICHISeqDataReader(object):
         
         self.sequence_index = 0
         # path to folder with data
-        dataset = 'D:\Irka\Project\data' # "./data/7/ICHI14_data_set/data"
+        dataset = 'H:\Irka\Project\data' # "./data/7/ICHI14_data_set/data"
         self.init_sequence(dataset)
     
     # read all docs in sequence
@@ -254,11 +254,11 @@ class ICHISeqDataReader(object):
                 if row[1] == label:
                     data_x_for_cur_label.append(row[0])
             #data_for_cur_label = all_data[numpy.where(all_data[:,1] == label)]
-            """            
+                        
             set_x = theano.shared(numpy.asarray(data_x_for_cur_label,
                                                        dtype=theano.config.floatX),
                                          borrow=True)
-            """
-            all_visible_seqs.append((data_x_for_cur_label, label))
+            
+            all_visible_seqs.append((set_x, label))
         
         return all_visible_seqs
