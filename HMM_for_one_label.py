@@ -33,7 +33,7 @@ class HMM_for_one_label(object):
         print(self.label, 'label in init')
         
         self.A=theano.shared(
-            value=generate_probabilities_for_matrix(n_hidden, n_hidden),
+            value=numpy.matrix(generate_probabilities_for_matrix(n_hidden, n_hidden)),
             name='A'
         )
 
@@ -41,12 +41,12 @@ class HMM_for_one_label(object):
         #B is matrix which consider probabilities observe visible element 
         #from hidden state
         self.B=theano.shared(
-            value=generate_probabilities_for_matrix(n_hidden, n_visible),
+            value=numpy.matrix(generate_probabilities_for_matrix(n_hidden, n_visible)),
             name='B'
         )
         
-        self.train_visible_seq=train_data[0]
-        self.max_time = len(self.train_visible_seq.get_value())
+        self.train_visible_seq=numpy.asarray(train_data[0].get_value())
+        self.max_time = len(self.train_visible_seq)
         self.n_visible = n_visible
         self.n_hidden=n_hidden
         self.epochs=n_epoch
@@ -99,12 +99,16 @@ class HMM_for_one_label(object):
     def update_alpha(self, visible_seq):
                 #generate probabilities observe visible_seq[0] in initial time
         for j in xrange(self.n_hidden):
-            T.set_subtensor(self.alpha[0, j], self.Pi[j] * self.B[j, visible_seq[0]])
+            print(self.alpha[0, j], 'self.alpha[0, j]')
+            print(self.Pi[j], 'self.Pi[j]')
+            print(visible_seq[0], 'visible_seq[0]')
+            print(self.B[j, int(visible_seq[0])], 'self.B[j, visible_seq[0]]')
+            T.set_subtensor(self.alpha[0, j], self.Pi[j] * self.B[j, int(visible_seq[0])])
             
         for t in xrange(self.max_time-1):
             for j in xrange(self.n_hidden):
                 T.set_subtensor(self.alpha[t+1,j],
-                                T.dot(self.alpha[t,:], self.A[:,j])*self.B[j, visible_seq[t+1]])
+                                T.dot(self.alpha[t,:], self.A[:,j])*self.B[j, int(visible_seq[t+1])])
 
     def probability_for_seq(self, visible_seq):
         self.update_alpha(visible_seq)
@@ -145,7 +149,7 @@ class HMM_for_one_label(object):
             for i in xrange(self.n_hidden):
                 cur_value = 0
                 for j in xrange(self.n_hidden):
-                    cur_value += self.A[i,j]*self.B[j,self.train_visible_seq[t+1]]*\
+                    cur_value += self.A[i,j]*self.B[j, int(self.train_visible_seq[t+1])]*\
                     self.betta[t+1,j]
                 T.set_subtensor(self.betta[t,i], cur_value)
                 
@@ -159,7 +163,7 @@ class HMM_for_one_label(object):
                 for j in xrange(self.n_hidden):
                     T.set_subtensor(self.ksi[t,i,j],
                                     self.alpha[t,i]*self.A[i,j]*\
-                                    self.B[j, self.train_visible_seq[t]]*\
+                                    self.B[j, int(self.train_visible_seq[t])]*\
                                     self.betta[t+1,j]/numerator)
 
         T.set_subtensor(self.gamma, T.sum(self.ksi, axis=0))
