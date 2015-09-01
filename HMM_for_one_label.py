@@ -34,8 +34,7 @@ class HMM_for_one_label(object):
         
         self.A=theano.shared(
             value=generate_probabilities_for_matrix(n_hidden, n_hidden),
-            name='A',
-            borrow=True
+            name='A'
         )
 
         
@@ -43,12 +42,11 @@ class HMM_for_one_label(object):
         #from hidden state
         self.B=theano.shared(
             value=generate_probabilities_for_matrix(n_hidden, n_visible),
-            name='B',
-            borrow=True
+            name='B'
         )
         
         self.train_visible_seq=train_data[0]
-        self.max_time = len(self.train_visible_seq)
+        self.max_time = len(self.train_visible_seq.get_value())
         self.n_visible = n_visible
         self.n_hidden=n_hidden
         self.epochs=n_epoch
