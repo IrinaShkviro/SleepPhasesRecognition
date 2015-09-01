@@ -99,10 +99,6 @@ class HMM_for_one_label(object):
     def update_alpha(self, visible_seq):
                 #generate probabilities observe visible_seq[0] in initial time
         for j in xrange(self.n_hidden):
-            print(self.alpha[0, j], 'self.alpha[0, j]')
-            print(self.Pi[j], 'self.Pi[j]')
-            print(visible_seq[0], 'visible_seq[0]')
-            print(self.B[j, int(visible_seq[0])], 'self.B[j, visible_seq[0]]')
             T.set_subtensor(self.alpha[0, j], self.Pi[j] * self.B[j, int(visible_seq[0])])
             
         for t in xrange(self.max_time-1):
