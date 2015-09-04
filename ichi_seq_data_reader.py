@@ -21,7 +21,7 @@ class ICHISeqDataReader(object):
         
         self.sequence_index = 0
         # path to folder with data
-        dataset = 'H:\Irka\Project\data' # "./data/7/ICHI14_data_set/data"
+        dataset = 'D:\Irka\Projects\NeuralNetwok\data\data' # "./data/7/ICHI14_data_set/data"
         self.init_sequence(dataset)
     
     # read all docs in sequence
@@ -124,8 +124,61 @@ class ICHISeqDataReader(object):
   
         return sequence_matrix
         
+    # read all docs in sequence
+    def read_all_for_second_hmm(self, rank, start_base):
+        # sequence_matrix = array[size of 1st doc][data.x, data.y, data.z, data.gt]
+        sequence_matrix = self.get_sequence()
+
+        # d_x1 = array[size of 1st doc][x, y, z]
+        d_x1 = preprocess_for_HMM(sequence_matrix[:, 0:self.n_in], rank, start_base)
+        
+        # d_y1 = array[size of 1st doc][labels]
+        d_y1 = sequence_matrix[:, self.n_in:self.n_in+1].reshape(-1)
+
+        # data_x_ar = union for (x, y, z) coordinates in all files
+        data_x = []        
+        data_x.append(d_x1)
+        
+        # data_y_ar = union for labels in all files
+        data_y = []
+        data_y.append(d_y1)
+        
+        for t in range(len(self.seqs) - 1):
+            # sequence_matrix = array[size of t-th doc][data.x, data.y, data.z, data.gt]
+            sequence_matrix = self.get_sequence()
+
+            # d_x = array[size of t-th doc][x, y, z]
+            d_x = preprocess_for_HMM(sequence_matrix[:, 0:self.n_in], rank, start_base)
+            
+            # d_y = array[size of t-th doc][labels]
+            d_y = sequence_matrix[:, self.n_in:self.n_in+1].reshape(-1)
+            
+            # concatenate data in current file with data in prev files in one array
+            data_x.append(d_x)
+            data_y.append(d_y)
+                            
+            gc.collect()
+        
+        set_x = theano.shared(data_x)
+        set_y = theano.shared(data_y)
+        
+        return (set_x, set_y) 
+
+    # read all docs in sequence
+    def read_doc_for_second_hmm(self, rank, start_base):
+        # sequence_matrix = array[size of 1st doc][data.x, data.y, data.z, data.gt]
+        sequence_matrix = self.get_sequence()
+
+        d_x = preprocess_for_HMM(sequence_matrix[:, 0:self.n_in], rank, start_base)
+        
+        d_y = sequence_matrix[:, self.n_in:self.n_in+1].reshape(-1)
+        
+        set_x = theano.shared(d_x)
+        set_y = theano.shared(d_y)
+        
+        return (set_x, set_y)         
         # read all docs in sequence
-    def read_all_seqs_on_labels(self):
+    def read_all_seqs_on_labels(self, rank, start_base):
         all_visible_seqs = []
         for label in xrange(7):
             # visible_seqs = array[count of labels][size of each label in doc][data.x, data.y, data.z, data.gt]
@@ -134,7 +187,7 @@ class ICHISeqDataReader(object):
             
             if visible_seqs[label]!=[]:
                 # d_x1 = array[size of 1st doc][x, y, z]
-                d_x1 = preprocess_for_HMM(visible_seqs[label][:, 0:self.n_in])
+                d_x1 = preprocess_for_HMM(visible_seqs[label][:, 0:self.n_in], rank, start_base)
                 
                 # d_y1 = array[size of 1st doc][labels]
                 d_y1 = visible_seqs[label][:, self.n_in:self.n_in+1].reshape(-1)
@@ -156,7 +209,7 @@ class ICHISeqDataReader(object):
                 if visible_seqs[label]!=[]:
                     # d_x = array[size of t-th doc]
                     # consider new labels for data
-                    d_x = preprocess_for_HMM(visible_seqs[label][:, 0:self.n_in])
+                    d_x = preprocess_for_HMM(visible_seqs[label][:, 0:self.n_in], rank, start_base)
                         
                     # d_y = array[size of t-th doc][labels]
                     d_y = visible_seqs[label][:, self.n_in:self.n_in+1].reshape(-1)
@@ -213,12 +266,12 @@ class ICHISeqDataReader(object):
         return visible_seqs
 
     # read all docs in sequence
-    def read_all_and_divide(self):
+    def read_all_and_divide(self, rank, start_base):
         # sequence_matrix = array[size of 1st doc][data.x, data.y, data.z, data.gt]
         sequence_matrix = self.get_sequence()
 
         # d_x1 = array[size of 1st doc][x, y, z]
-        d_x1 = preprocess_for_HMM(sequence_matrix[:, 0:self.n_in])
+        d_x1 = preprocess_for_HMM(sequence_matrix[:, 0:self.n_in], rank, start_base)
         
         # d_y1 = array[size of 1st doc][labels]
         d_y1 = sequence_matrix[:, self.n_in:self.n_in+1].reshape(-1)
@@ -234,7 +287,7 @@ class ICHISeqDataReader(object):
             sequence_matrix = self.get_sequence()
 
             # d_x = array[size of t-th doc][x, y, z]
-            d_x = preprocess_for_HMM(sequence_matrix[:, 0:self.n_in])
+            d_x = preprocess_for_HMM(sequence_matrix[:, 0:self.n_in], rank, start_base)
             
             # d_y = array[size of t-th doc][labels]
             d_y = sequence_matrix[:, self.n_in:self.n_in+1].reshape(-1)

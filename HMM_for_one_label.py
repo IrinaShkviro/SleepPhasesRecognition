@@ -36,7 +36,6 @@ class HMM_for_one_label(object):
             value=numpy.matrix(generate_probabilities_for_matrix(n_hidden, n_hidden)),
             name='A'
         )
-
         
         #B is matrix which consider probabilities observe visible element 
         #from hidden state

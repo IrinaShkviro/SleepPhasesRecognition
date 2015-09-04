@@ -46,8 +46,9 @@ class HMM(object):
         :param visible_seqs: array with input for each HMM
         :param n_epochs: array which point on training epochs count for each HMM
         """
-
+        print('in init big HMM')
         self.HMMs=[]
+        print(count_of_hmm, 'hmm count')
         for label in xrange(count_of_hmm):
             print(label, 'label in cycle')
             current_HMM = HMM_for_one_label(n_visible=n_visibles[label],
@@ -58,7 +59,7 @@ class HMM(object):
                                           valid_data = valid_seqs[label],
                                           test_data = test_seqs[label]
                                           )
-            current_HMM.train()
+            #current_HMM.train()
             self.HMMs.append(current_HMM)
             print(label, 'label in cycle')
             
@@ -68,7 +69,7 @@ class HMM(object):
         return numpy.argmax(probabilities)
        
 def train():
-    train_data_names = ['p10a','p011','p013','p014','p020','p022','p040','p045','p048']
+    train_data_names = ['p10a','p011']
     valid_data = ['p09b','p023','p035','p038']
     test_data = ['p09a','p033']
         
@@ -91,6 +92,7 @@ def train():
     n_hiddens = [200] * 7
     n_epochs = [1] * 7
 
+    print('start creation')
     trained_HMM = HMM(n_visibles=n_visibles,
                       n_hiddens=n_hiddens,
                       train_seqs=train_visible_seqs,
