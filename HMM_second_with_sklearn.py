@@ -48,27 +48,6 @@ def change_data_for_one_patient(hiddens_patient, visibles_patient,
     new_visible.append(last_visible_label)
     return (new_visible, new_hidden)    
 
-def change_data_for_ws(dataset, window_size, base_for_labels, n_patients):
-    (set_x, set_y) = dataset
-    
-    set_hidden = set_y.eval()
-    set_visible = set_x.eval()
-    
-    new_hidden=[]
-    new_visible=[]
-    
-    for patient_number in xrange(n_patients):
-        visibles_patient, hiddens_patient = change_data_for_one_patient(
-            hiddens_patient=set_hidden[patient_number],
-            visibles_patient=set_visible[patient_number],
-            window_size=window_size,
-            base_for_labels=base_for_labels
-        )
-        new_hidden.append(hiddens_patient)
-        new_visible.append(visibles_patient)
-                    
-    return (new_visible, new_hidden)
-
 def update_params_on_patient(pi_values, a_values, b_values, array_from_hidden,
                              hiddens_patient, visibles_patient, n_hidden):
     pi_values[hiddens_patient[0]] += 1
@@ -90,47 +69,6 @@ def finish_training(pi_values, a_values, b_values, array_from_hidden, n_hidden,
         b_values[hidden] = b_values[hidden]/array_from_hidden[hidden]
     pi_values = pi_values/float(n_patients)
     return (pi_values, a_values, b_values)
-
-def create_hmm_for_all_data(n_hidden, n_visible, train_set, n_patients, window_size=1):
-
-        # split the datasets
-        (train_set_visible, train_set_hidden) = train_set
-        
-        pi_values = numpy.zeros((n_hidden,))
-        a_values = numpy.zeros((n_hidden, n_hidden)) 
-        b_values = numpy.zeros((n_hidden, n_visible))
-        array_from_hidden = numpy.zeros((n_hidden,))
-        
-        for patient_number in xrange(n_patients):
-            pi_values, a_values, b_values, array_from_hidden = update_params_on_patient(
-                pi_values=pi_values,
-                a_values=a_values,
-                b_values=b_values,
-                array_from_hidden=array_from_hidden,
-                hiddens_patient=train_set_hidden[patient_number],
-                visibles_patient=train_set_visible[patient_number],
-                n_hidden=n_hidden
-            )
-            
-        pi_values, a_values, b_values = finish_training(
-            pi_values=pi_values,
-            a_values=a_values,
-            b_values=b_values,
-            array_from_hidden=array_from_hidden,
-            n_hidden=n_hidden,
-            n_patients=n_patients
-        )
-        
-        model = hmm.MultinomialHMM(
-            n_components=n_hidden,
-            startprob=pi_values,
-            transmat=a_values
-        )
-        model.n_symbols=n_visible
-        model.emissionprob_=b_values 
-         
-        print('MultinomialHMM created')
-        return model        
         
 def errors(predicted_states, actual_states):
     """Return 1 if y!=y_predicted (error) and 0 if right
@@ -149,7 +87,176 @@ def errors(predicted_states, actual_states):
     # the T.neq operator returns a vector of 0s and 1s, where 1
     # represents a mistake in prediction
     return T.neq(predicted_states, actual_states)
+
+def get_error_on_patient(model, visible_set, hidden_set, algo):
+    predicted_states = model.predict(
+            obs=visible_set,
+            algorithm=algo
+    )
+    error_array=errors(predicted_states=predicted_states,
+                       actual_states=hidden_set)
+    return T.mean(error_array).eval()
+                        
+def train_separately():
+    train_data_names = ['p10a','p011','p013','p014','p020','p022','p040',
+                        'p045','p048','p09b','p023','p035','p038', 'p09a','p033']
+    valid_data = ['p09b','p023','p035','p038', 'p09a','p033']
+
+    n_train_patients=len(train_data_names)
+    n_valid_patients=len(valid_data)
+    
+    rank = 1
+    start_base=5
+    base = pow(start_base, rank) + 1
+    n_visible_labels = pow(base, 3)
+    window_size = 1
+    n_visible=pow(n_visible_labels, window_size)
+    n_hidden=7
+        
+    train_reader = ICHISeqDataReader(train_data_names)
+    valid_reader = ICHISeqDataReader(valid_data)
+    
+    pi_values = numpy.zeros((n_hidden,))
+    a_values = numpy.zeros((n_hidden, n_hidden)) 
+    b_values = numpy.zeros((n_hidden, n_visible))
+    array_from_hidden = numpy.zeros((n_hidden,))
+
+    for train_patient in xrange(n_train_patients):
+        #get data divided on sequences with respect to labels
+        train_set_x, train_set_y = train_reader.read_doc_for_second_hmm(
+            rank=rank,
+            start_base=start_base
+        )
+        
+        new_train_visible, new_train_hidden = change_data_for_one_patient(
+            hiddens_patient=train_set_y.eval(),
+            visibles_patient=train_set_x.eval(),
+            window_size=window_size,
+            base_for_labels=n_visible_labels
+        )
+        
+        pi_values, a_values, b_values, array_from_hidden = update_params_on_patient(
+            pi_values=pi_values,
+            a_values=a_values,
+            b_values=b_values,
+            array_from_hidden=array_from_hidden,
+            hiddens_patient=new_train_hidden,
+            visibles_patient=new_train_visible,
+            n_hidden=n_hidden
+        )
+        
+        gc.collect()
+        
+    pi_values, a_values, b_values = finish_training(
+        pi_values=pi_values,
+        a_values=a_values,
+        b_values=b_values,
+        array_from_hidden=array_from_hidden,
+        n_hidden=n_hidden,
+        n_patients=n_train_patients
+    )
+    
+    hmm_model = hmm.MultinomialHMM(
+        n_components=n_hidden,
+        startprob=pi_values,
+        transmat=a_values
+    )
+    hmm_model.n_symbols=n_visible
+    hmm_model.emissionprob_=b_values 
+    gc.collect()
+    print('MultinomialHMM created')
+    algo='viterbi'
+
+    for valid_patient in xrange(n_valid_patients):
+        #get data divided on sequences with respect to labels
+        valid_set_x, valid_set_y = valid_reader.read_doc_for_second_hmm(
+            rank=rank,
+            start_base=start_base
+        )
+        
+        new_valid_visible, new_valid_hidden = change_data_for_one_patient(
+            hiddens_patient=valid_set_y.eval(),
+            visibles_patient=valid_set_x.eval(),
+            window_size=window_size,
+            base_for_labels=n_visible_labels
+        )
+        
+        patient_error = get_error_on_patient(
+            model=hmm_model,
+            visible_set=new_valid_visible,
+            hidden_set=new_valid_hidden,
+            algo=algo
+        )
+        
+        print(patient_error, ' error for patient ' + str(valid_patient))
+        gc.collect()  
+                   
+if __name__ == '__main__':
+    train_separately()
+
+
+
+def change_data_for_ws(dataset, window_size, base_for_labels, n_patients):
+    (set_x, set_y) = dataset
+    
+    set_hidden = set_y.eval()
+    set_visible = set_x.eval()
+    
+    new_hidden=[]
+    new_visible=[]
+    
+    for patient_number in xrange(n_patients):
+        visibles_patient, hiddens_patient = change_data_for_one_patient(
+            hiddens_patient=set_hidden[patient_number],
+            visibles_patient=set_visible[patient_number],
+            window_size=window_size,
+            base_for_labels=base_for_labels
+        )
+        new_hidden.append(hiddens_patient)
+        new_visible.append(visibles_patient)
                     
+    return (new_visible, new_hidden)
+
+def create_hmm_for_all_data(n_hidden, n_visible, train_set, n_patients, window_size=1):
+    # split the datasets
+    (train_set_visible, train_set_hidden) = train_set
+        
+    pi_values = numpy.zeros((n_hidden,))
+    a_values = numpy.zeros((n_hidden, n_hidden)) 
+    b_values = numpy.zeros((n_hidden, n_visible))
+    array_from_hidden = numpy.zeros((n_hidden,))
+        
+    for patient_number in xrange(n_patients):
+        pi_values, a_values, b_values, array_from_hidden = update_params_on_patient(
+            pi_values=pi_values,
+            a_values=a_values,
+            b_values=b_values,
+            array_from_hidden=array_from_hidden,
+            hiddens_patient=train_set_hidden[patient_number],
+            visibles_patient=train_set_visible[patient_number],
+            n_hidden=n_hidden
+        )
+            
+    pi_values, a_values, b_values = finish_training(
+        pi_values=pi_values,
+        a_values=a_values,
+        b_values=b_values,
+        array_from_hidden=array_from_hidden,
+        n_hidden=n_hidden,
+        n_patients=n_patients
+    )
+        
+    model = hmm.MultinomialHMM(
+        n_components=n_hidden,
+        startprob=pi_values,
+        transmat=a_values
+    )
+    model.n_symbols=n_visible
+    model.emissionprob_=b_values 
+         
+    print('MultinomialHMM created')
+    return model   
+
 def get_error_on_model(model, n_patients, test_set, window_size=1):
     print('in validate_model \n')
     print(str(n_patients) + ' n_patients \n')
@@ -158,14 +265,13 @@ def get_error_on_model(model, n_patients, test_set, window_size=1):
     
     for patient in xrange(n_patients):
         print(str(patient) + ' patient number \n')
-        predicted_states = model.predict(
-            obs=set_visible[patient],
-            algorithm='viterbi'
+        patient_error = get_error_on_patient(
+            model=model,
+            visible_set=set_visible[patient],
+            hidden_set=set_hidden[patient]
         )
-        error_array=errors(predicted_states=predicted_states,
-                           actual_states=set_hidden[patient])
-        print(str(T.mean(error_array).eval()) + 'mean error value \n')
-
+        print(str(patient_error) + ' mean error value \n')   
+        
 def train_all_data():
     #train_data_names = ['p10a','p011','p013','p014','p020','p022','p040','p045','p048']
     train_data_names = ['p10a']
@@ -239,112 +345,5 @@ def train_all_data():
     print('Hmm created')
     get_error_on_model(model = trained_HMM,
                    n_patients = n_valid_patients,
-                   valid_set = (new_valid_set_x, new_valid_set_y),
+                   test_set = (new_valid_set_x, new_valid_set_y),
                    window_size=1)
-
-def train_separately():
-    #train_data_names = ['p10a','p011','p013','p014','p020','p022','p040','p045','p048']
-    train_data_names = ['p10a']
-    #valid_data=['p10a']
-    valid_data = ['p09b','p023','p035','p038']
-    test_data = ['p09a','p033']
-
-    n_train_patients=len(train_data_names)
-    n_valid_patients=len(valid_data)
-    n_test_patients=len(test_data)
-    
-    rank = 1
-    start_base=5
-    base = pow(start_base, rank) + 1
-    n_visible_labels = pow(base, 3)
-    window_size = 1
-    n_visible=pow(n_visible_labels, window_size)
-    n_hidden=7
-        
-    train_reader = ICHISeqDataReader(train_data_names)
-    valid_reader = ICHISeqDataReader(valid_data)
-    test_reader = ICHISeqDataReader(test_data)
-    
-    pi_values = numpy.zeros((n_hidden,))
-    a_values = numpy.zeros((n_hidden, n_hidden)) 
-    b_values = numpy.zeros((n_hidden, n_visible))
-    array_from_hidden = numpy.zeros((n_hidden,))
-
-    for train_patient in xrange(n_train_patients):
-        #get data divided on sequences with respect to labels
-        train_set_x, train_set_y = train_reader.read_doc_for_second_hmm(
-            rank=rank,
-            start_base=start_base
-        )
-        
-        new_train_visible, new_train_hidden = change_data_for_one_patient(
-            hiddens_patient=train_set_y.eval(),
-            visibles_patient=train_set_x.eval(),
-            window_size=window_size,
-            base_for_labels=n_visible_labels
-        )
-        
-        pi_values, a_values, b_values, array_from_hidden = update_params_on_patient(
-            pi_values=pi_values,
-            a_values=a_values,
-            b_values=b_values,
-            array_from_hidden=array_from_hidden,
-            hiddens_patient=new_train_hidden,
-            visibles_patient=new_train_visible,
-            n_hidden=n_hidden
-        )
-        
-    pi_values, a_values, b_values = finish_training(
-        pi_values=pi_values,
-        a_values=a_values,
-        b_values=b_values,
-        array_from_hidden=array_from_hidden,
-        n_hidden=n_hidden,
-        n_patients=n_train_patients
-    )
-    
-    hmm_model = hmm.MultinomialHMM(
-        n_components=n_hidden,
-        startprob=pi_values,
-        transmat=a_values
-    )
-    hmm_model.n_symbols=n_visible
-    hmm_model.emissionprob_=b_values 
-         
-    print('MultinomialHMM created')
-
-    valid_set_x, valid_set_y = valid_reader.read_all_for_second_hmm(
-        rank=rank,
-        start_base=start_base
-    )
-    
-    test_set_x, test_set_y = test_reader.read_all_for_second_hmm(
-        rank=rank,
-        start_base=start_base
-    )
-    
-    new_valid_set_x, new_valid_set_y = change_data_for_ws(
-            dataset = (valid_set_x, valid_set_y),
-            window_size=window_size,
-            base_for_labels=n_visible_labels,
-            n_patients=n_valid_patients
-    )
-        
-    new_test_set_x, new_test_set_y = change_data_for_ws(
-            dataset = (test_set_x, test_set_y),
-            window_size=window_size,
-            base_for_labels=n_visible_labels,
-            n_patients=n_test_patients
-    )
-               
-    gc.collect()  
-    print('Hmm created')
-    get_error_on_model(model = hmm_model,
-                   n_patients = n_valid_patients,
-                   valid_set = (new_valid_set_x, new_valid_set_y),
-                   window_size=1)
-                   
-if __name__ == '__main__':
-    train_separately()
-    train_all_data()
-    

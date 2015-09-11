@@ -453,7 +453,7 @@ def test_all_params():
     for lr in learning_rates:
         for ws in window_sizes:
             test_params(learning_rate=lr,
-                        n_epochs=1000,
+                        n_epochs=1,
                         window_size = ws,
                         datasets=datasets,
                         output_folder=output_folder,

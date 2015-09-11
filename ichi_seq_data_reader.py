@@ -272,6 +272,7 @@ class ICHISeqDataReader(object):
 
         # d_x1 = array[size of 1st doc][x, y, z]
         d_x1 = preprocess_for_HMM(sequence_matrix[:, 0:self.n_in], rank, start_base)
+        #d_x1 = preprocess_sequence(sequence_matrix[:, 0:self.n_in])
         
         # d_y1 = array[size of 1st doc][labels]
         d_y1 = sequence_matrix[:, self.n_in:self.n_in+1].reshape(-1)
@@ -288,6 +289,7 @@ class ICHISeqDataReader(object):
 
             # d_x = array[size of t-th doc][x, y, z]
             d_x = preprocess_for_HMM(sequence_matrix[:, 0:self.n_in], rank, start_base)
+            #d_x = preprocess_sequence(sequence_matrix[:, 0:self.n_in])
             
             # d_y = array[size of t-th doc][labels]
             d_y = sequence_matrix[:, self.n_in:self.n_in+1].reshape(-1)
@@ -315,3 +317,33 @@ class ICHISeqDataReader(object):
             all_visible_seqs.append((set_x, label))
         
         return all_visible_seqs
+
+    # read one doc in sequence
+    def read_one_and_divide(self, rank, start_base):
+        # sequence_matrix = array[size of 1st doc][data.x, data.y, data.z, data.gt]
+        sequence_matrix = self.get_sequence()
+
+        # d_x1 = array[size of 1st doc][x, y, z]
+        d_x = preprocess_for_HMM(sequence_matrix[:, 0:self.n_in], rank, start_base)
+        #d_x1 = preprocess_sequence(sequence_matrix[:, 0:self.n_in])
+        
+        # d_y1 = array[size of 1st doc][labels]
+        d_y = sequence_matrix[:, self.n_in:self.n_in+1].reshape(-1)
+
+        data = zip(d_x, d_y)
+        visible_seqs = []
+        
+        for label in xrange(7):
+            d_x_for_label=[]
+            for row in data:
+                if row[1] == label:
+                    d_x_for_label.append(row[0])
+            #data_for_cur_label = all_data[numpy.where(all_data[:,1] == label)]
+                        
+            set_x = theano.shared(numpy.asarray(d_x_for_label,
+                                                       dtype=theano.config.floatX),
+                                         borrow=True)
+            
+            visible_seqs.append((set_x, label))
+        
+        return visible_seqs

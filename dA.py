@@ -42,7 +42,8 @@ from theano.tensor.shared_randomstreams import RandomStreams
 
 from ichi_seq_data_reader import ICHISeqDataReader
 from MyVisualizer import visualize_da
-
+from sgd import train_da_sgd
+from cg import train_da_cg
 
 # start-snippet-1
 class dA(object):
@@ -60,8 +61,7 @@ class dA(object):
         n_hidden,
         theano_rng=None,
         input=None,
-        W=None,
-        bhid=None,
+        theta=None,
         bvis=None
     ):
         """
@@ -112,27 +112,34 @@ class dA(object):
         """
         self.n_visible = n_visible
         self.n_hidden = n_hidden
+        self.input = input
 
         # create a Theano random generator that gives symbolic random values
         if not theano_rng:
             theano_rng = RandomStreams(numpy_rng.randint(2 ** 30))
 
-        # note : W' was written as `W_prime` and b' as `b_prime`
-        if not W:
-            # W is initialized with `initial_W` which is uniformely sampled
-            # from -4*sqrt(6./(n_visible+n_hidden)) and
-            # 4*sqrt(6./(n_hidden+n_visible))the output of uniform if
-            # converted using asarray to dtype
-            # theano.config.floatX so that the code is runable on GPU
-            initial_W = numpy.asarray(
-                numpy_rng.uniform(
-                    low=-4 * numpy.sqrt(6. / (n_hidden + self.n_visible)),
-                    high=4 * numpy.sqrt(6. / (n_hidden + self.n_visible)),
-                    size=(self.n_visible, n_hidden)
+        # initialize theta = (W,b) with 0s; W gets the shape (n_visible, n_hidden),
+        # while b is a vector of n_out elements, making theta a vector of
+        # n_visible*n_hidden + n_hidden elements
+        if not theta:
+            theta = theano.shared(
+                value=numpy.asarray(
+                    numpy_rng.uniform(
+                        low=-4 * numpy.sqrt(6. / (n_hidden + n_visible + 1)),
+                        high=4 * numpy.sqrt(6. / (n_hidden + n_visible + 1)),
+                        size=(n_visible * n_hidden + n_hidden)
+                    ),
+                    dtype=theano.config.floatX
                 ),
-                dtype=theano.config.floatX
+                name='theta',
+                borrow=True
             )
-            W = theano.shared(value=initial_W, name='W', borrow=True)
+        self.theta = theta
+        
+        # W is represented by the fisr n_visible*n_hidden elements of theta
+        W = self.theta[0:n_visible * n_hidden].reshape((n_visible, n_hidden))
+        # b is the rest (last n_hidden elements)
+        bhid = self.theta[n_visible * n_hidden:n_visible * n_hidden + n_hidden]
 
         if not bvis:
             bvis = theano.shared(
@@ -140,16 +147,6 @@ class dA(object):
                     (self.n_visible,),
                     dtype=theano.config.floatX
                 ),
-                borrow=True
-            )
-
-        if not bhid:
-            bhid = theano.shared(
-                value=numpy.zeros(
-                    (n_hidden,),
-                    dtype=theano.config.floatX
-                ),
-                name='b',
                 borrow=True
             )
 
@@ -167,7 +164,10 @@ class dA(object):
         else:
             self.x = input.reshape((1, self.n_visible))
 
-        self.params = [self.W, self.b, self.b_prime]
+        self.params = [self.theta, self.b_prime]
+        
+        self.train_cost_array=[]
+        self.epoch=0
     # end-snippet-1
 
     def get_corrupted_input(self, input, corruption_level):
@@ -207,7 +207,7 @@ class dA(object):
         """
         return T.nnet.sigmoid(T.dot(hidden, self.W_prime) + self.b_prime)
 
-    def get_cost_updates(self, corruption_level, learning_rate):
+    def get_cost(self, corruption_level):
         """ This function computes the cost and the updates for one trainng
         step of the dA """
 
@@ -216,8 +216,19 @@ class dA(object):
         y = self.get_hidden_values(tilde_x)
         self.z = self.get_reconstructed_input(y)
         
-        cost = T.sqrt(T.sum(T.sqr(T.flatten(self.x - self.z, outdim=1))))
+        cost = T.sqrt(T.sum(T.sqr(T.flatten(self.x - self.z))))
                 
+        return cost
+        
+    def get_cost_updates(self, corruption_level, learning_rate):
+        """ This function computes the cost and the updates for one trainng
+        step of the dA """
+
+        tilde_x = self.get_corrupted_input(self.x, corruption_level)
+        y = self.get_hidden_values(tilde_x)
+        self.z = self.get_reconstructed_input(y)
+        cost = T.sqrt(T.sum(T.sqr(T.flatten(self.x - self.z, outdim=1))))
+
         # compute the gradients of the cost of the `dA` with respect
         # to its parameters
         gparams = T.grad(cost, self.params)
@@ -242,7 +253,7 @@ class dA(object):
         return self.x    
         
 def train_dA(learning_rate, training_epochs, window_size, corruption_level, n_hidden,
-             datasets, output_folder, base_folder):
+             train_set, output_folder, base_folder):
 
     """
     This dA is tested on ICHI_Data
@@ -264,30 +275,19 @@ def train_dA(learning_rate, training_epochs, window_size, corruption_level, n_hi
     :type n_hidden: int
     :param n_hidden: count of nodes in hidden layer
 
-    :type datasets: array
-    :param datasets: [train_set, valid_set, test_set]
-    
     :type output_folder: string
     :param output_folder: folder for costand error graphics with results
 
     """
     
-    train_set = datasets[0]
-    valid_set = datasets[1]
-    test_set = datasets[2]    
+    # split the datasets
+    start_time = time.clock()
     
-    n_train_samples = train_set.get_value(borrow=True).shape[0] - window_size + 1
-
-    n_valid_samples = valid_set.get_value(borrow=True).shape[0] - window_size + 1
-       
-    n_test_samples = test_set.get_value(borrow=True).shape[0] - window_size + 1
-    
-    # allocate symbolic variables for the data
-    index = T.lscalar()    # index
-    x = T.matrix('x')  # the data is presented as 3D vector
-
     rng = numpy.random.RandomState(123)
     theano_rng = RandomStreams(rng.randint(2 ** 30))
+    
+    x = T.matrix('x')  # the data is presented as 3D vector
+    
 
     da = dA(
         numpy_rng=rng,
@@ -296,143 +296,21 @@ def train_dA(learning_rate, training_epochs, window_size, corruption_level, n_hi
         n_visible=window_size*3,
         n_hidden=n_hidden
     )
+    '''
+    updated_da = train_da_sgd(learning_rate=learning_rate,
+                              window_size=window_size,
+                              training_epochs=training_epochs,
+                              corruption_level=corruption_level,
+                              train_set=train_set,
+                              da=da)
+    '''                         
+    updated_da = train_da_cg(da=da,
+                             train_set=train_set,
+                             window_size=window_size,
+                             corruption_level=corruption_level,
+                             training_epochs=training_epochs)
 
-    cost, updates = da.get_cost_updates(
-        corruption_level=corruption_level,
-        learning_rate=learning_rate
-    )
-    
-    predict = da.predict()
-    actual = da.actual()
-    
-    train_da = theano.function(
-        [index],
-        outputs=[cost, predict, actual],
-        updates=updates,
-        givens={
-            x: train_set[index: index + window_size]
-        }
-    )
-    
-    validate_da = theano.function(
-        inputs=[index],
-        outputs=cost,
-        givens={
-            x: valid_set[index: index + window_size],
-        }
-    )
-        
-    test_da = theano.function(
-        inputs=[index],
-        outputs=cost,
-        givens={
-            x: test_set[index: index + window_size],
-        }
-    )
-
-    ############
-    # TRAINING #
-    ############
-    patience = n_train_samples*2  # look as this many examples regardless
-    patience_increase = 25  # wait this much longer when a new best is
-                                      # found
-    improvement_threshold = 0.995  # a relative improvement of this much is
-                                      # considered significant
-    validation_frequency = patience / 4
-    
-    best_validation_cost = numpy.inf
-    start_time = time.clock()
-    
-    done_looping = False
-    epoch = 0
-    iter = 0
-   
-    train_cost_array = []
-    valid_cost_array = []
-    test_cost_array = []
-    cur_train_cost =[]
-    print(n_train_samples, 'train_samples')
-
-    # go through training epochs
-    while (epoch < training_epochs) and (not done_looping):
-        # go through trainng set
-        for index in xrange(n_train_samples):
-            sample_cost, sample_predict, sample_actual = train_da(index)
-            # iteration number
-            iter = epoch * n_train_samples + index
-            
-            cur_train_cost.append(sample_cost)
-               
-            if (iter + 1) % validation_frequency == 0:
-                # compute zero-one loss on validation set
-                validation_costs = [validate_da(i)
-                                   for i in xrange(n_valid_samples)]
-                validation_cost = float(numpy.mean(numpy.asarray(validation_costs)))*100
-                   
-                valid_cost_array.append([])
-                valid_cost_array[-1].append(float(iter)/n_train_samples)
-                valid_cost_array[-1].append(validation_cost)
-                    
-                print(
-                    'epoch %i, iter %i/%i, validation error %f %%' %
-                    (
-                        epoch,
-                        index + 1,
-                        n_train_samples,
-                        validation_cost
-                    )
-                )
-                   
-                # if we got the best validation score until now
-                if validation_cost < best_validation_cost:
-                    #improve patience if loss improvement is good enough
-                    if validation_cost < best_validation_cost *  \
-                       improvement_threshold:
-                        patience = max(patience, iter * patience_increase)
-    
-                    best_validation_cost = validation_cost
-                    # test it on the test set                      
-                    test_costs = [test_da(i)
-                                   for i in xrange(n_test_samples)]
-                    test_cost = float(numpy.mean(numpy.asarray(test_costs)))*100
-                        
-                    test_cost_array.append([])
-                    test_cost_array[-1].append(float(iter)/n_train_samples)
-                    test_cost_array[-1].append(test_cost)
-    
-                    print(
-                        (
-                            '     epoch %i, iter %i/%i, test error of'
-                            ' best model %f %%'
-                        ) %
-                        (
-                            epoch,
-                            index + 1,
-                            n_train_samples,
-                            test_cost
-                        )
-                    )
-                              
-            if patience*4 <= iter:
-                done_looping = True
-                break
-                    
-        train_cost_array.append([])
-        train_cost_array[-1].append(float(iter)/n_train_samples)
-        train_cost_array[-1].append(float(numpy.mean(cur_train_cost)))
-        cur_train_cost =[]
-                
-        epoch = epoch + 1
-                
-    test_costs = [test_da(i)
-                    for i in xrange(n_test_samples)]
-    test_cost = float(numpy.mean(numpy.asarray(test_costs)))*100
-                        
-    test_cost_array.append([])
-    test_cost_array[-1].append(float(iter)/n_train_samples)
-    test_cost_array[-1].append(test_cost)                   
-    
-    visualize_da(train_cost=train_cost_array,
+    visualize_da(train_cost=updated_da.train_cost_array,
                  window_size=window_size,
                  learning_rate=learning_rate,
                  corruption_level=corruption_level,
@@ -464,8 +342,6 @@ def test_da_params(corruption_level):
     test_reader = ICHISeqDataReader(test_data)
     test_set, test_labels = test_reader.read_all()
     
-    datasets = [train_set, valid_set, test_set]
-    
     output_folder=('[%s], [%s], [%s]')%(",".join(train_data), ",".join(valid_data), ",".join(test_data))
     
     for lr in learning_rates:
@@ -475,7 +351,7 @@ def test_da_params(corruption_level):
                      window_size = ws, 
                      corruption_level=corruption_level,
                      n_hidden=ws*2,
-                     datasets=datasets,
+                     train_set=train_set,
                      output_folder=output_folder,
                      base_folder='dA_plots')
 

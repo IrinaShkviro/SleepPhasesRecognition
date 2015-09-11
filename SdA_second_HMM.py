@@ -1,25 +1,17 @@
+# -*- coding: utf-8 -*-
 """
- This code introduces stacked denoising auto-encoders (SdA) using Theano.
- Denoising autoencoders are the building blocks for SdA.
- An autoencoder takes an input x and first maps it to a hidden representation
- y = f_{\theta}(x) = s(Wx+b), parameterized by \theta={W,b}. The resulting
- latent representation y is then mapped back to a "reconstructed" vector
- z \in [0,1]^d in input space z = g_{\theta'}(y) = s(W'y + b').  The weight
- matrix W' can optionally be constrained such that W' = W^T, in which case
- the autoencoder is said to have tied weights. The network is trained such
- that to minimize the reconstruction error (the error between x and z).
- For the denosing autoencoder, during training, first x is corrupted into
- \tilde{x}, where \tilde{x} is a partially destroyed version of x by means
- of a stochastic mapping. Afterwards y is computed as before (using
- \tilde{x}), y = s(W\tilde{x} + b) and z as s(W'y + b'). The reconstruction
- error is now measured between z and the uncorrupted input x.
+Created on Sept 2015
+
+@author: Irka
 """
+
 import os
 import sys
 import timeit
 import gc
 
 import numpy
+from sklearn import hmm
 
 import theano
 import theano.tensor as T
@@ -32,6 +24,8 @@ from MyVisualizer import visualize_pretraining, visualize_finetuning
 from ichi_seq_data_reader import ICHISeqDataReader
 from cg import pretrain_sda_cg, finetune_sda_cg
 from sgd import pretrain_sda_sgd, finetune_sda_sgd
+from HMM_second_with_sklearn import change_data_for_one_patient, \
+    update_params_on_patient, finish_training, errors
 
 theano.config.exception_verbosity='high'
 
@@ -145,20 +139,20 @@ class SdA(object):
                           theta=sigmoid_layer.theta)
             self.dA_layers.append(dA_layer)
         # end-snippet-2
-        # We now need to add a logistic layer on top of the MLP
-        self.logLayer = LogisticRegression(
-            input=self.sigmoid_layers[-1].output,
-            n_in=hidden_layers_sizes[-1],
-            n_out=n_outs
+        sda_input = T.matrix('sda_input')  # the data is presented as rasterized images
+        self.da_layers_output_size = hidden_layers_sizes[-1]
+        self.get_da_output = theano.function(
+            inputs=[sda_input],
+            outputs=self.sigmoid_layers[-1].output.reshape((-1, self.da_layers_output_size)),
+            givens={
+                self.x: sda_input
+            }
         )
-        self.params.append(self.logLayer.params)
         
-        self.finetune_cost = self.logLayer.negative_log_likelihood(self.y)
-        # compute the gradients with respect to the model parameters
-        # symbolic variable that points to the number of errors made on the
-        # minibatch given by self.x and self.y
-        self.errors = self.logLayer.errors(self.y)
-        self.predict = self.logLayer.predict()
+    def set_hmm_layer(self, hmm_model):
+        self.hmmLayer = hmm_model
+        self.predict = self.hmmLayer.predict()
+        self.errors = errors()
 
 def test_SdA(datasets,
              output_folder, base_folder,
@@ -244,6 +238,78 @@ def test_SdA(datasets,
     ########################
     # FINETUNING THE MODEL #
     ########################
+                          
+    #create matrices for params of HMM layer
+    train_data_names = ['p10a','p011','p013','p014','p020','p022','p040',
+                        'p045','p048','p09b','p023','p035','p038', 'p09a','p033']
+    valid_data = ['p09b','p023','p035','p038', 'p09a','p033']
+
+    n_train_patients=len(train_data_names)
+    n_valid_patients=len(valid_data)
+    
+    rank = 1
+    start_base=5
+    base = pow(start_base, rank) + 1
+    n_visible=pow(base, sda.da_layers_output_size)
+    n_hidden=n_out
+        
+    train_reader = ICHISeqDataReader(train_data_names)
+    valid_reader = ICHISeqDataReader(valid_data)
+    
+    pi_values = numpy.zeros((n_hidden,))
+    a_values = numpy.zeros((n_hidden, n_hidden)) 
+    b_values = numpy.zeros((n_hidden, n_visible))
+    array_from_hidden = numpy.zeros((n_hidden,))
+
+    for train_patient in xrange(n_train_patients):
+        #get data divided on sequences with respect to labels
+        train_set_x, train_set_y = train_reader.read_next_doc()
+        
+        train_visible_after_sda = sda.get_da_output(train_set_x.eval())
+        
+        new_train_visible, new_train_hidden = change_data_for_one_patient(
+            hiddens_patient=train_set_y.eval(),
+            visibles_patient=train_visible_after_sda,
+            window_size=sda.da_layers_output_size,
+            base_for_labels=base
+        )
+        
+        pi_values, a_values, b_values, array_from_hidden = update_params_on_patient(
+            pi_values=pi_values,
+            a_values=a_values,
+            b_values=b_values,
+            array_from_hidden=array_from_hidden,
+            hiddens_patient=new_train_hidden,
+            visibles_patient=new_train_visible,
+            n_hidden=n_hidden
+        )
+        
+        gc.collect()
+        
+    pi_values, a_values, b_values = finish_training(
+        pi_values=pi_values,
+        a_values=a_values,
+        b_values=b_values,
+        array_from_hidden=array_from_hidden,
+        n_hidden=n_hidden,
+        n_patients=n_train_patients
+    )
+    
+    hmm_model = hmm.MultinomialHMM(
+        n_components=n_hidden,
+        startprob=pi_values,
+        transmat=a_values
+    )
+    
+    hmm_model.n_symbols=n_visible
+    hmm_model.emissionprob_=b_values 
+    gc.collect()
+    print('MultinomialHMM created')
+    
+    sda.set_hmm_layer(
+        hmm_model=hmm_model
+    )
+                          
     start_time = timeit.default_timer()
     '''
     finetuned_sda = finetune_sda_sgd(sda=pretrained_sda,
@@ -251,7 +317,7 @@ def test_SdA(datasets,
                                     window_size=window_size,
                                     finetune_lr=finetune_lr,
                                     training_epochs=training_epochs)
-    '''
+    
     finetuned_sda = finetune_sda_cg(sda=pretrained_sda,
                                     datasets=datasets,
                                     window_size=window_size,
@@ -267,9 +333,9 @@ def test_SdA(datasets,
                          learning_rate=0,
                          datasets_folder=output_folder,
                          base_folder=base_folder)
-
+    '''
 def test_all_params():
-    window_sizes = [10]
+    window_sizes = [1]
     
     #train_data = ['p10a','p011','p013','p014','p020','p022','p040','p045','p048']
     train_data = ['p10a']    

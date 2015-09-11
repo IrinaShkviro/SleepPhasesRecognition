@@ -13,7 +13,7 @@ def preprocess_sequence(sequence_matrix):
     sequence_matrix = (sequence_matrix-mins)*((1-(-1.))/(maxs-mins)) - 1
     return sequence_matrix
     
-def preprocess_for_HMM(sequence_matrix, rank, start_base):
+def preprocess_for_HMM(sequence_matrix, rank, start_base, n_in=3):
     """
     Normalize sequence matrix
     Return matrix with values from -1 to 1
@@ -25,13 +25,30 @@ def preprocess_for_HMM(sequence_matrix, rank, start_base):
     sequence_matrix = ((sequence_matrix-mins)*((1-(-1.))/(maxs-mins)))/(2*10/start_base)
     arounded_matrix = numpy.around(sequence_matrix, rank)*pow(10, rank)
     data_labels = []
-    i = 0
     for row in arounded_matrix:
-        i+=1
         #create individual labels for vectors
-        cur_value = int(row[0]*pow(base, 2) + row[1]*base + row[2])
-        data_labels.append(cur_value)    
+        cur_value=0
+        for degree in xrange(n_in):
+            cur_value += row[degree]*pow(base, n_in-1-degree)
+        data_labels.append(int(cur_value))
     return data_labels
+
+def preprocess_for_HMM_in_sda(sequence_matrix, rank, start_base, n_in=3):
+    """
+    Normalize sequence matrix
+    Return matrix with values from -1 to 1
+    """
+    print(sequence_matrix, 'seq_matrix')
+    sequence_matrix = sequence_matrix.reshape((-1, n_in))
+    print(sequence_matrix, 'seq_matrix')
+    mins = T.min(sequence_matrix, axis=0)
+    maxs = T.max(sequence_matrix, axis=0)
+    #11^3 variant for labels
+    base = pow(start_base, rank) + 1
+    sequence_matrix = ((sequence_matrix-mins)*((1-(-1.))/(maxs-mins)))/(2*10/start_base)
+    print(sequence_matrix, 'seq_matrix')
+    arounded_matrix = T.round(sequence_matrix * pow(10, rank))
+    return arounded_matrix
     
 def generate_random_probabilities(length):
     #generate randow values in interval [0; 99]
