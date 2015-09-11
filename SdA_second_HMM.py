@@ -264,8 +264,11 @@ def test_SdA(datasets,
     for train_patient in xrange(n_train_patients):
         #get data divided on sequences with respect to labels
         train_set_x, train_set_y = train_reader.read_next_doc()
-        
-        train_visible_after_sda = sda.get_da_output(train_set_x.eval())
+        train_x_array = train_set_x.get_value()
+        n_train_times = train_x_array.shape[0] - window_size + 1
+        train_visible_after_sda = [sda.get_da_output(
+                train_x_array[time: time+window_size])
+                for time in xrange(n_train_times)]
         
         new_train_visible, new_train_hidden = change_data_for_one_patient(
             hiddens_patient=train_set_y.eval(),
