@@ -266,9 +266,12 @@ def test_SdA(datasets,
         train_set_x, train_set_y = train_reader.read_next_doc()
         train_x_array = train_set_x.get_value()
         n_train_times = train_x_array.shape[0] - window_size + 1
-        train_visible_after_sda = [sda.get_da_output(
-                train_x_array[time: time+window_size])
-                for time in xrange(n_train_times)]
+        train_visible_after_sda = numpy.array([sda.get_da_output(
+                train_x_array[time: time+window_size]).ravel()
+                for time in xrange(n_train_times)]).ravel()
+                    
+        print(train_set_y.eval(), 'hiddens_patient')
+        print(train_visible_after_sda, 'visibles_patient')
         
         new_train_visible, new_train_hidden = change_data_for_one_patient(
             hiddens_patient=train_set_y.eval(),
