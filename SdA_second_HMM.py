@@ -25,7 +25,7 @@ from ichi_seq_data_reader import ICHISeqDataReader
 from cg import pretrain_sda_cg, finetune_sda_cg
 from sgd import pretrain_sda_sgd, finetune_sda_sgd
 from HMM_second_with_sklearn import change_data_for_one_patient, \
-    update_params_on_patient, finish_training, errors
+    update_params_on_patient, finish_training, get_error_on_patient
 
 theano.config.exception_verbosity='high'
 
@@ -151,17 +151,14 @@ class SdA(object):
         
     def set_hmm_layer(self, hmm_model):
         self.hmmLayer = hmm_model
-        self.predict = self.hmmLayer.predict()
-        self.errors = errors()
 
-def test_SdA(datasets,
+def train_SdA(datasets,
              output_folder, base_folder,
              window_size,
              corruption_levels,
              pretraining_epochs,
-             training_epochs,
-             pretrain_lr=0,
-             finetune_lr=0):
+             base,
+             pretrain_lr=0):
     """
     Demonstrates how to train and test a stochastic denoising autoencoder.
     This is demonstrated on ICHI.
@@ -242,19 +239,13 @@ def test_SdA(datasets,
     #create matrices for params of HMM layer
     train_data_names = ['p10a','p011','p013','p014','p020','p022','p040',
                         'p045','p048','p09b','p023','p035','p038', 'p09a','p033']
-    valid_data = ['p09b','p023','p035','p038', 'p09a','p033']
 
     n_train_patients=len(train_data_names)
-    n_valid_patients=len(valid_data)
     
-    rank = 1
-    start_base=5
-    base = pow(start_base, rank) + 1
     n_visible=pow(base, sda.da_layers_output_size)
     n_hidden=n_out
         
     train_reader = ICHISeqDataReader(train_data_names)
-    valid_reader = ICHISeqDataReader(valid_data)
     
     pi_values = numpy.zeros((n_hidden,))
     a_values = numpy.zeros((n_hidden, n_hidden)) 
@@ -269,10 +260,7 @@ def test_SdA(datasets,
         train_visible_after_sda = numpy.array([sda.get_da_output(
                 train_x_array[time: time+window_size]).ravel()
                 for time in xrange(n_train_times)]).ravel()
-                    
-        print(train_set_y.eval(), 'hiddens_patient')
-        print(train_visible_after_sda, 'visibles_patient')
-        
+                            
         new_train_visible, new_train_hidden = change_data_for_one_patient(
             hiddens_patient=train_set_y.eval(),
             visibles_patient=train_visible_after_sda,
@@ -315,31 +303,41 @@ def test_SdA(datasets,
     sda.set_hmm_layer(
         hmm_model=hmm_model
     )
-                          
-    start_time = timeit.default_timer()
-    '''
-    finetuned_sda = finetune_sda_sgd(sda=pretrained_sda,
-                                    datasets=datasets,
-                                    window_size=window_size,
-                                    finetune_lr=finetune_lr,
-                                    training_epochs=training_epochs)
+    return sda
     
-    finetuned_sda = finetune_sda_cg(sda=pretrained_sda,
-                                    datasets=datasets,
-                                    window_size=window_size,
-                                    training_epochs=training_epochs)
+def test_sda(sda, test_names, base, window_size=1, algo='viterbi'):
+    test_reader = ICHISeqDataReader(test_names)
+    test_set_x, test_set_y = test_reader.read_all()
     
-    end_time = timeit.default_timer()
+    n_test_patients = len(test_names)
     
-    visualize_finetuning(train_cost=finetuned_sda.logLayer.train_cost_array,
-                         train_error=finetuned_sda.logLayer.train_error_array,
-                         valid_error=finetuned_sda.logLayer.valid_error_array,
-                         test_error=finetuned_sda.logLayer.test_error_array,
-                         window_size=window_size,
-                         learning_rate=0,
-                         datasets_folder=output_folder,
-                         base_folder=base_folder)
-    '''
+    for test_patient in xrange(n_test_patients):
+        #get data divided on sequences with respect to labels
+        test_set_x, test_set_y = test_reader.read_next_doc()
+        test_x_array = test_set_x.get_value()
+        n_test_times = test_x_array.shape[0] - window_size + 1
+        test_visible_after_sda = numpy.array([sda.get_da_output(
+                test_x_array[time: time+window_size]).ravel()
+                for time in xrange(n_test_times)]).ravel()
+                            
+        new_test_visible, new_test_hidden = change_data_for_one_patient(
+            hiddens_patient=test_set_y.eval(),
+            visibles_patient=test_visible_after_sda,
+            window_size=sda.da_layers_output_size,
+            base_for_labels=base
+        )
+        
+        patient_error = get_error_on_patient(
+            model=sda.hmmLayer,
+            visible_set=new_test_visible,
+            hidden_set=new_test_hidden,
+            algo=algo
+        )
+        
+        print(patient_error, ' error for patient ' + str(test_patient))
+        gc.collect()
+    
+    
 def test_all_params():
     window_sizes = [1]
     
@@ -365,16 +363,24 @@ def test_all_params():
     pretrain_lr=.03
     finetune_lr=.03
     
+    rank = 1
+    start_base=5
+    base = pow(start_base, rank) + 1
+    
     for ws in window_sizes:
-        test_SdA(datasets=datasets,
+        trained_sda = train_SdA(datasets=datasets,
                  output_folder=output_folder,
                  base_folder='SdA_sgd_cg_plots',
                  window_size=ws,
                  corruption_levels=corruption_levels,
                  pretrain_lr=pretrain_lr,
-                 finetune_lr=finetune_lr,
-                 pretraining_epochs=1,
-                 training_epochs=1)
+                 base=base,
+                 pretraining_epochs=1
+        )
+        test_sda(sda=trained_sda,
+                 test_names=test_data,
+                 base = base
+        )
 
 if __name__ == '__main__':
     test_all_params()

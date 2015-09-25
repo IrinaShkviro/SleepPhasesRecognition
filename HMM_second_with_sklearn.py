@@ -23,6 +23,9 @@ from ichi_seq_data_reader import ICHISeqDataReader
 
 def change_data_for_one_patient(hiddens_patient, visibles_patient,
                                 window_size, base_for_labels):
+    """
+        hidden_patient is array, elements - one of base_for_labels values
+    """
     n_patient_samples = len(hiddens_patient)
     half_window_size = int(window_size/2)
     new_hidden=hiddens_patient[half_window_size:n_patient_samples-half_window_size]
@@ -37,7 +40,7 @@ def change_data_for_one_patient(hiddens_patient, visibles_patient,
                 pow(base_for_labels, window_size+i-half_window_size)
             visible_label += visibles_patient[sample+i+1]*\
                 pow(base_for_labels, half_window_size-i-1) 
-        new_visible.append(visible_label)                       
+        new_visible.append(int(visible_label))
     last_visible_label=visibles_patient[n_patient_samples-half_window_size-1]*\
         pow(base_for_labels, half_window_size)                    
     for i in xrange(half_window_size):
@@ -45,7 +48,7 @@ def change_data_for_one_patient(hiddens_patient, visibles_patient,
             pow(base_for_labels, half_window_size+i+1)
         last_visible_label += visibles_patient[n_patient_samples-half_window_size+i]*\
             pow(base_for_labels, half_window_size-i-1)
-    new_visible.append(last_visible_label)
+    new_visible.append(int(last_visible_label))
     return (new_visible, new_hidden)    
 
 def update_params_on_patient(pi_values, a_values, b_values, array_from_hidden,

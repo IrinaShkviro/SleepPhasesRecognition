@@ -15,8 +15,8 @@ def preprocess_sequence(sequence_matrix):
     
 def preprocess_for_HMM(sequence_matrix, rank, start_base, n_in=3):
     """
-    Normalize sequence matrix
-    Return matrix with values from -1 to 1
+    Normalize sequence matrix and divide elements on classes
+    Return matrix with values from 0 to count of classes
     """
     mins = sequence_matrix.min(axis=0)
     maxs = sequence_matrix.max(axis=0)
