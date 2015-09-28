@@ -4,7 +4,8 @@ import gc
 import theano
 import theano.tensor as T
 
-from preprocess import preprocess_sequence, preprocess_for_HMM
+from preprocess import preprocess_sequence, preprocess_for_HMM,\
+    preprocess_av_disp
 
 class ICHISeqDataReader(object):
     def __init__(self, seqs_for_analyse):
@@ -164,7 +165,7 @@ class ICHISeqDataReader(object):
         
         return (set_x, set_y) 
 
-    # read all docs in sequence
+    # read one doc in sequence
     def read_doc_for_second_hmm(self, rank, start_base):
         # sequence_matrix = array[size of 1st doc][data.x, data.y, data.z, data.gt]
         sequence_matrix = self.get_sequence()
@@ -176,8 +177,30 @@ class ICHISeqDataReader(object):
         set_x = theano.shared(d_x)
         set_y = theano.shared(d_y)
         
-        return (set_x, set_y)         
-        # read all docs in sequence
+        return (set_x, set_y)   
+ 
+    # read one doc in sequence
+    def read_doc_with_av_disp(self, rank, start_base, window_size):
+        # sequence_matrix = array[size of 1st doc][data.x, data.y, data.z, data.gt]
+        sequence_matrix = self.get_sequence()
+
+        d_x = preprocess_av_disp(
+            sequence_matrix=sequence_matrix[:, 0:self.n_in],
+            rank=rank,
+            start_base=start_base,
+            window_size=window_size
+        )
+        
+        n_patient_samples = len(d_x)
+        half_window_size = int(window_size/2)        
+        d_y = sequence_matrix[half_window_size:n_patient_samples-half_window_size, self.n_in:self.n_in+1].reshape(-1)
+        
+        set_x = theano.shared(d_x)
+        set_y = theano.shared(d_y)
+        
+        return (set_x, set_y)   
+       
+     # read all docs in sequence
     def read_all_seqs_on_labels(self, rank, start_base):
         all_visible_seqs = []
         for label in xrange(7):

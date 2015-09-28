@@ -24,9 +24,8 @@ from MyVisualizer import visualize_pretraining, visualize_finetuning
 from ichi_seq_data_reader import ICHISeqDataReader
 from cg import pretrain_sda_cg, finetune_sda_cg
 from sgd import pretrain_sda_sgd, finetune_sda_sgd
-from HMM_second_with_sklearn import update_params_on_patient,\
- finish_training, get_error_on_patient
-from preprocess import preprocess_av_disp
+from HMM_second_with_sklearn_without_window import change_data_for_one_patient, \
+    update_params_on_patient, finish_training, get_error_on_patient
 
 theano.config.exception_verbosity='high'
 
@@ -158,8 +157,7 @@ def train_SdA(datasets, train_names,
              window_size,
              corruption_levels,
              pretraining_epochs,
-             start_base,
-             rank,
+             base,
              pretrain_lr=0):
     """
     Demonstrates how to train and test a stochastic denoising autoencoder.
@@ -192,7 +190,7 @@ def train_SdA(datasets, train_names,
     sda = SdA(
         numpy_rng=numpy_rng,
         n_ins=n_in,
-        hidden_layers_sizes=[window_size*2],
+        hidden_layers_sizes=[window_size*2, window_size],
         n_outs=n_out
     )
     # end-snippet-3 start-snippet-4
@@ -244,7 +242,6 @@ def train_SdA(datasets, train_names,
 
     n_train_patients=len(train_data_names)
     
-    base = pow(start_base, rank) + 1
     n_visible=pow(base, sda.da_layers_output_size)
     n_hidden=n_out
         
@@ -258,23 +255,18 @@ def train_SdA(datasets, train_names,
     for train_patient in xrange(n_train_patients):
         #get data divided on sequences with respect to labels
         train_set_x, train_set_y = train_reader.read_next_doc()
-        train_set_x = train_set_x.get_value()
-        train_set_y = train_set_y.eval()
-        n_train_times = train_set_x.shape[0] - window_size + 1
-        
+        train_x_array = train_set_x.get_value()
+        n_train_times = train_x_array.shape[0] - window_size + 1
         train_visible_after_sda = numpy.array([sda.get_da_output(
-                train_set_x[time: time+window_size]).ravel()
-                for time in xrange(n_train_times)])
-                    
-        new_train_visible = create_labels(
-            da_output_matrix=train_visible_after_sda,
-            rank=rank,
-            start_base=start_base,
-            window_size=window_size
+                train_x_array[time: time+window_size]).ravel()
+                for time in xrange(n_train_times)]).ravel()
+                            
+        new_train_visible, new_train_hidden = change_data_for_one_patient(
+            hiddens_patient=train_set_y.eval(),
+            visibles_patient=train_visible_after_sda,
+            window_size=sda.da_layers_output_size,
+            base_for_labels=base
         )
-        n_patient_samples = len(train_set_y)
-        half_window_size = int(window_size/2)
-        new_train_hidden=train_set_y[half_window_size:n_patient_samples-half_window_size]
         
         pi_values, a_values, b_values, array_from_hidden = update_params_on_patient(
             pi_values=pi_values,
@@ -313,7 +305,7 @@ def train_SdA(datasets, train_names,
     )
     return sda
     
-def test_sda(sda, test_names, rank, start_base, window_size=1, algo='viterbi'):
+def test_sda(sda, test_names, base, window_size=1, algo='viterbi'):
     test_reader = ICHISeqDataReader(test_names)
     test_set_x, test_set_y = test_reader.read_all()
     
@@ -322,24 +314,18 @@ def test_sda(sda, test_names, rank, start_base, window_size=1, algo='viterbi'):
     for test_patient in xrange(n_test_patients):
         #get data divided on sequences with respect to labels
         test_set_x, test_set_y = test_reader.read_next_doc()
-        test_set_x = test_set_x.get_value()
-        test_set_y = test_set_y.eval()
-        n_test_times = test_set_x.shape[0] - window_size + 1
-        
+        test_x_array = test_set_x.get_value()
+        n_test_times = test_x_array.shape[0] - window_size + 1
         test_visible_after_sda = numpy.array([sda.get_da_output(
-                test_set_x[time: time+window_size]).ravel()
-                for time in xrange(n_test_times)])
-                    
-        new_test_visible = create_labels(
-            da_output_matrix=test_visible_after_sda,
-            rank=rank,
-            start_base=start_base,
-            window_size=window_size
+                test_x_array[time: time+window_size]).ravel()
+                for time in xrange(n_test_times)]).ravel()
+                            
+        new_test_visible, new_test_hidden = change_data_for_one_patient(
+            hiddens_patient=test_set_y.eval(),
+            visibles_patient=test_visible_after_sda,
+            window_size=sda.da_layers_output_size,
+            base_for_labels=base
         )
-        
-        n_patient_samples = len(test_set_y)
-        half_window_size = int(window_size/2)
-        new_test_hidden=test_set_y[half_window_size:n_patient_samples-half_window_size]
         
         patient_error = get_error_on_patient(
             model=sda.hmmLayer,
@@ -349,13 +335,13 @@ def test_sda(sda, test_names, rank, start_base, window_size=1, algo='viterbi'):
         )
         
         print(patient_error, ' error for patient ' + str(test_patient))
-        gc.collect()  
+        gc.collect()
+    
     
 def test_all_params():
     window_sizes = [1]
     
-    #train_data = ['p10a','p011','p013','p014','p020','p022','p040','p045','p048']
-    train_data = ['p10a', 'p002']    
+    train_data = ['p10a','p011','p013','p014','p020','p022','p040','p045','p048']
     valid_data = ['p09b','p023','p035','p038']
     test_data = ['p09a','p033']
     
@@ -372,12 +358,11 @@ def test_all_params():
             (test_set_x, test_set_y)]
 
     output_folder=('[%s], [%s], [%s]')%(",".join(train_data), ",".join(valid_data), ",".join(test_data))
-    corruption_levels = [.1]
+    corruption_levels = [.1, .2]
     pretrain_lr=.03
-    finetune_lr=.03
     
     rank = 1
-    start_base=10
+    start_base=5
     base = pow(start_base, rank) + 1
     
     for ws in window_sizes:
@@ -385,46 +370,17 @@ def test_all_params():
                  datasets=datasets,
                  train_names=train_data,
                  output_folder=output_folder,
-                 base_folder='SdA_second_HMM',
+                 base_folder='SdA_second_hmm_without_window',
                  window_size=ws,
                  corruption_levels=corruption_levels,
                  pretrain_lr=pretrain_lr,
-                 start_base=start_base,
-                 rank=rank,
+                 base=base,
                  pretraining_epochs=15
         )
         test_sda(sda=trained_sda,
                  test_names=test_data,
-                 start_base=start_base,
-                 rank=rank
+                 base = base
         )
-
-def create_labels(da_output_matrix, rank, window_size, start_base=10):
-    """
-    Normalize sequence matrix and get average and dispersion
-    """
-    #normalization
-    mins = da_output_matrix.min(axis=0)
-    maxs = da_output_matrix.max(axis=0)
-    da_output_matrix = ((da_output_matrix-mins)*((1-(-1.))/(maxs-mins)))/2
-    #get average and dispersion
-    avg_disp_matrix = [[da_output_matrix[i: i + window_size].mean(axis=1),
-                         da_output_matrix[i: i + window_size].max(axis=1)-
-                         da_output_matrix[i: i + window_size].min(axis=1)]
-        for i in xrange(da_output_matrix.shape[0])]
-    base = pow(start_base, rank) + 1
-    arounded_matrix = numpy.around(avg_disp_matrix, rank)*pow(10, rank)
-    data_labels = []
-    #n_in=2
-    for row in arounded_matrix:
-        data_labels.append(int(row[0]*base + row[1]))
-        """new_row = row.flat
-        #create individual labels for vectors
-        cur_value=0
-        for degree in xrange(n_in):
-            cur_value += new_row[degree]*pow(base, n_in-1-degree)
-        data_labels.append(int(cur_value))"""
-    return data_labels
 
 if __name__ == '__main__':
     test_all_params()
