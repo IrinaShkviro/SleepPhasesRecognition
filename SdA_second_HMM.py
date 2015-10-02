@@ -153,14 +153,14 @@ class SdA(object):
     def set_hmm_layer(self, hmm_model):
         self.hmmLayer = hmm_model
 
-def train_SdA(datasets, train_names,
+def train_SdA(train_names,
              output_folder, base_folder,
              window_size,
              corruption_levels,
              pretraining_epochs,
              start_base,
              rank,
-             pretrain_lr=0):
+             pretrain_lr):
     """
     Demonstrates how to train and test a stochastic denoising autoencoder.
     This is demonstrated on ICHI.
@@ -174,11 +174,6 @@ def train_SdA(datasets, train_names,
     :type output_folder: string
     :param output_folder: folder for costand error graphics with results
     """
-
-    # split the datasets
-    (train_set_x, train_set_y) = datasets[0]
-    (valid_set_x, valid_set_y) = datasets[1]
-    (test_set_x, test_set_y) = datasets[2]
 
     # compute number of examples given in training set
     n_in = window_size*3  # number of input units
@@ -245,13 +240,14 @@ def train_SdA(datasets, train_names,
     n_train_patients=len(train_data_names)
     
     base = pow(start_base, rank) + 1
-    n_visible=pow(base, sda.da_layers_output_size)
+    n_visible=pow(base, 2)
     n_hidden=n_out
         
     train_reader = ICHISeqDataReader(train_data_names)
     
     pi_values = numpy.zeros((n_hidden,))
-    a_values = numpy.zeros((n_hidden, n_hidden)) 
+    a_values = numpy.zeros((n_hidden, n_hidden))
+    print(n_visible, 'n_visible')
     b_values = numpy.zeros((n_hidden, n_visible))
     array_from_hidden = numpy.zeros((n_hidden,))
 
@@ -352,26 +348,14 @@ def test_sda(sda, test_names, rank, start_base, window_size=1, algo='viterbi'):
         gc.collect()  
     
 def test_all_params():
-    window_sizes = [1]
+    window_sizes = [10]
     
-    #train_data = ['p10a','p011','p013','p014','p020','p022','p040','p045','p048']
-    train_data = ['p10a', 'p002']    
+    train_data = ['p10a','p011','p013','p014','p020','p022','p040','p045','p048']
+    #train_data = ['p10a', 'p002']    
     valid_data = ['p09b','p023','p035','p038']
     test_data = ['p09a','p033']
-    
-    train_reader = ICHISeqDataReader(train_data)
-    train_set_x, train_set_y = train_reader.read_all()
-    
-    valid_reader = ICHISeqDataReader(valid_data)
-    valid_set_x, valid_set_y = valid_reader.read_all()
 
-    test_reader = ICHISeqDataReader(test_data)
-    test_set_x, test_set_y = test_reader.read_all()
-    
-    datasets = [(train_set_x, train_set_y), (valid_set_x, valid_set_y),
-            (test_set_x, test_set_y)]
-
-    output_folder=('[%s], [%s], [%s]')%(",".join(train_data), ",".join(valid_data), ",".join(test_data))
+    output_folder=('all_data, [%s], [%s]')%(",".join(valid_data), ",".join(test_data))
     corruption_levels = [.1]
     pretrain_lr=.03
     finetune_lr=.03
@@ -382,7 +366,6 @@ def test_all_params():
     
     for ws in window_sizes:
         trained_sda = train_SdA(
-                 datasets=datasets,
                  train_names=train_data,
                  output_folder=output_folder,
                  base_folder='SdA_second_HMM',
@@ -391,7 +374,7 @@ def test_all_params():
                  pretrain_lr=pretrain_lr,
                  start_base=start_base,
                  rank=rank,
-                 pretraining_epochs=15
+                 pretraining_epochs=1
         )
         test_sda(sda=trained_sda,
                  test_names=test_data,
@@ -413,7 +396,7 @@ def create_labels(da_output_matrix, rank, window_size, start_base=10):
                          da_output_matrix[i: i + window_size].min(axis=1)]
         for i in xrange(da_output_matrix.shape[0])]
     base = pow(start_base, rank) + 1
-    arounded_matrix = numpy.around(avg_disp_matrix, rank)*pow(10, rank)
+    arounded_matrix = numpy.fix(avg_disp_matrix*pow(10, rank))
     data_labels = []
     #n_in=2
     for row in arounded_matrix:
