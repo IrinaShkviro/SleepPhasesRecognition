@@ -187,7 +187,7 @@ def train_SdA(train_names,
     sda = SdA(
         numpy_rng=numpy_rng,
         n_ins=n_in,
-        hidden_layers_sizes=[window_size*2],
+        hidden_layers_sizes=[window_size*2, window_size],
         n_outs=n_out
     )
     # end-snippet-3 start-snippet-4
@@ -234,16 +234,14 @@ def train_SdA(train_names,
     ########################
                           
     #create matrices for params of HMM layer
-    train_data_names = ['p10a','p011','p013','p014','p020','p022','p040',
-                        'p045','p048','p09b','p023','p035','p038', 'p09a','p033']
 
-    n_train_patients=len(train_data_names)
+    n_train_patients=len(train_names)
     
     base = pow(start_base, rank) + 1
     n_visible=pow(base, 2)
     n_hidden=n_out
         
-    train_reader = ICHISeqDataReader(train_data_names)
+    train_reader = ICHISeqDataReader(train_names)
     
     pi_values = numpy.zeros((n_hidden,))
     a_values = numpy.zeros((n_hidden, n_hidden))
@@ -262,7 +260,7 @@ def train_SdA(train_names,
                 train_set_x[time: time+window_size]).ravel()
                 for time in xrange(n_train_times)])
                     
-        new_train_visible = create_labels(
+        new_train_visible = create_labels_after_das(
             da_output_matrix=train_visible_after_sda,
             rank=rank,
             start_base=start_base,
@@ -320,13 +318,13 @@ def test_sda(sda, test_names, rank, start_base, window_size=1, algo='viterbi'):
         test_set_x, test_set_y = test_reader.read_next_doc()
         test_set_x = test_set_x.get_value()
         test_set_y = test_set_y.eval()
-        n_test_times = test_set_x.shape[0] - window_size + 1
+        n_test_times = test_set_x.shape[0] - window_size
         
         test_visible_after_sda = numpy.array([sda.get_da_output(
                 test_set_x[time: time+window_size]).ravel()
                 for time in xrange(n_test_times)])
                     
-        new_test_visible = create_labels(
+        new_test_visible = create_labels_after_das(
             da_output_matrix=test_visible_after_sda,
             rank=rank,
             start_base=start_base,
@@ -348,41 +346,51 @@ def test_sda(sda, test_names, rank, start_base, window_size=1, algo='viterbi'):
         gc.collect()  
     
 def test_all_params():
-    window_sizes = [10]
-    
-    train_data = ['p10a','p011','p013','p014','p020','p022','p040','p045','p048']
-    #train_data = ['p10a', 'p002']    
-    valid_data = ['p09b','p023','p035','p038']
-    test_data = ['p09a','p033']
+    window_size = 10
+    all_train = ['002','003','005','007','08a','08b','09a','09b',
+			'10a','011','012','013','014','15a','15b','016','017','018','019',
+			'020','021','022','023','025','026','027','028','029',
+			'030','031','032','033','034','035','036','037','038',
+			'040','042','043','044','045','047','048','049','050',
+			'051']
+    train_data = ['p002','p003','p005','p007','p08a','p08b','p09a','p09b',
+                  'p10a','p011','p012','p013','p014','p15a','p15b','p016',
+                  'p017','p018','p019','p020','p021','p022','p023','p025',
+                  'p026','p027','p028','p029','p030','p031','p032','p033',
+                  'p034','p035','p036','p037','p038','p040','p042','p043',
+                  'p044','p045','p047','p048','p049','p050','p051']
 
-    output_folder=('all_data, [%s], [%s]')%(",".join(valid_data), ",".join(test_data))
-    corruption_levels = [.1]
+    
+    corruption_levels = [.1, .2]
     pretrain_lr=.03
-    finetune_lr=.03
     
-    rank = 1
+    rank = 3
     start_base=10
-    base = pow(start_base, rank) + 1
-    
-    for ws in window_sizes:
+    for test_pat_num in xrange(len(train_data)):
+        test_pat = train_data.pop(test_pat_num)
+        print(test_pat, 'test_pat')
+        print(train_data, 'train_data')
+        output_folder=('all_data, [%s]')%(test_pat)
         trained_sda = train_SdA(
-                 train_names=train_data,
-                 output_folder=output_folder,
-                 base_folder='SdA_second_HMM',
-                 window_size=ws,
-                 corruption_levels=corruption_levels,
-                 pretrain_lr=pretrain_lr,
-                 start_base=start_base,
-                 rank=rank,
-                 pretraining_epochs=1
+            train_names=train_data,
+            output_folder=output_folder,
+            base_folder='SdA_second_HMM',
+            window_size=window_size,
+            corruption_levels=corruption_levels,
+            pretrain_lr=pretrain_lr,
+            start_base=start_base,
+            rank=rank,
+            pretraining_epochs=15
         )
         test_sda(sda=trained_sda,
-                 test_names=test_data,
-                 start_base=start_base,
-                 rank=rank
+            test_names=[test_pat],
+            rank=rank,
+            start_base=start_base,
+            window_size=window_size
         )
+        train_data.insert(test_pat_num, test_pat)
 
-def create_labels(da_output_matrix, rank, window_size, start_base=10):
+def create_labels_after_das(da_output_matrix, rank, window_size, start_base=10):
     """
     Normalize sequence matrix and get average and dispersion
     """
@@ -391,22 +399,16 @@ def create_labels(da_output_matrix, rank, window_size, start_base=10):
     maxs = da_output_matrix.max(axis=0)
     da_output_matrix = ((da_output_matrix-mins)*((1-(-1.))/(maxs-mins)))/2
     #get average and dispersion
-    avg_disp_matrix = [[da_output_matrix[i: i + window_size].mean(axis=1),
-                         da_output_matrix[i: i + window_size].max(axis=1)-
-                         da_output_matrix[i: i + window_size].min(axis=1)]
-        for i in xrange(da_output_matrix.shape[0])]
+    avg_disp_matrix = numpy.array([[da_output_matrix[i].mean(),
+                         da_output_matrix[i].max()-
+                         da_output_matrix[i].min()]
+        for i in xrange(da_output_matrix.shape[0])])
     base = pow(start_base, rank) + 1
-    arounded_matrix = numpy.fix(avg_disp_matrix*pow(10, rank))
+    arounded_matrix = numpy.rint(avg_disp_matrix.flatten()*pow(start_base, rank)).reshape((da_output_matrix.shape[0], 2))
     data_labels = []
     #n_in=2
     for row in arounded_matrix:
         data_labels.append(int(row[0]*base + row[1]))
-        """new_row = row.flat
-        #create individual labels for vectors
-        cur_value=0
-        for degree in xrange(n_in):
-            cur_value += new_row[degree]*pow(base, n_in-1-degree)
-        data_labels.append(int(cur_value))"""
     return data_labels
 
 if __name__ == '__main__':
