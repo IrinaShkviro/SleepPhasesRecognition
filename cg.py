@@ -9,6 +9,10 @@ import theano
 import theano.tensor as T
 import scipy.optimize
 
+from functools import partial
+
+from ichi_seq_data_reader import ICHISeqDataReader
+
 def train_logistic_cg(datasets, window_size, n_epochs, classifier):
     #############
     # LOAD DATA #
@@ -229,7 +233,7 @@ def train_da_cg(da, train_set, window_size, corruption_level, training_epochs):
     )
     return da
     
-def pretraining_functions_sda_cg(sda, train_set_x, window_size, corruption_levels):
+def pretraining_functions_sda_cg1(sda, train_set_x, window_size, corruption_levels):
     ''' Generates a list of functions, each of them implementing one
     step in trainnig the dA corresponding to the layer with same index.
     The function will require as input the index, and to train
@@ -270,6 +274,7 @@ def pretraining_functions_sda_cg(sda, train_set_x, window_size, corruption_level
     pretrain_updates = []
     for da_index in xrange(sda.n_layers):
         cur_dA=sda.dA_layers[da_index]
+        print('da_index in creating', da_index)
         # get the cost and the updates list
         cost = cur_dA.get_cost(corruption_levels[da_index])
         
@@ -294,6 +299,7 @@ def pretraining_functions_sda_cg(sda, train_set_x, window_size, corruption_level
         )
         
         def train_fn(theta_value):
+            print ('da_index in function')
             sda.dA_layers[da_index].theta.set_value(theta_value, borrow=True)
             train_losses = [sample_cost(i)
                             for i in xrange(n_train_samples)]
@@ -335,6 +341,71 @@ def pretraining_functions_sda_cg(sda, train_set_x, window_size, corruption_level
         pretrain_updates.append(train_fn_grad)
 
     return pretrain_fns, pretrain_updates
+
+def pretraining_functions_sda_cg(sda, train_set_x, window_size, corruption_levels):
+    ''' Generates a list of functions, each of them implementing one
+    step in trainnig the dA corresponding to the layer with same index.
+    The function will require as input the index, and to train
+    a dA you just need to iterate, calling the corresponding function on
+    all indexes.
+    :type train_set_x: theano.tensor.TensorType
+    :param train_set_x: Shared variable that contains all datapoints used        for training the dA
+    :type window_size: int
+    :param window_size: size of a window
+    '''
+
+    # index
+    index = T.lscalar('index')
+    #corruption_level = T.scalar('corruption')  # % of corruption to use
+    n_train_samples = train_set_x.get_value(borrow=True).shape[0] - window_size + 1
+            
+    def train_fn(theta_value, da_index):
+        cur_dA=sda.dA_layers[da_index]
+        cost = cur_dA.get_cost(corruption_levels[da_index])
+        
+        # compile a theano function that returns the cost
+        sample_cost = theano.function(
+            inputs=[index],
+            outputs=cost,
+            givens={
+                sda.x: train_set_x[index: index + window_size]
+            },
+            on_unused_input='warn'
+        )
+        
+        sda.dA_layers[da_index].theta.set_value(theta_value, borrow=True)
+        train_losses = [sample_cost(i)
+                        for i in xrange(n_train_samples)]
+        this_train_loss = float(numpy.mean(train_losses))  
+        sda.dA_layers[da_index].train_cost_array.append([])
+        sda.dA_layers[da_index].train_cost_array[-1].append(sda.dA_layers[da_index].epoch)
+        sda.dA_layers[da_index].train_cost_array[-1].append(this_train_loss)
+        sda.dA_layers[da_index].epoch += 1
+
+        return numpy.mean(train_losses)
+            
+            
+    def train_fn_grad(theta_value, da_index):
+        cur_dA=sda.dA_layers[da_index]
+        cost = cur_dA.get_cost(corruption_levels[da_index])
+        
+        # compile a theano function that returns the gradient with respect to theta
+        sample_grad = theano.function(
+            inputs=[index],
+            outputs=T.grad(cost, cur_dA.theta),
+            givens={
+                sda.x: train_set_x[index: index + window_size]
+            },
+            on_unused_input='warn'
+        )
+        
+        sda.dA_layers[da_index].theta.set_value(theta_value, borrow=True)
+        grad = sample_grad(0)
+        for i in xrange(1, n_train_samples):
+            grad += sample_grad(i)
+        return grad / n_train_samples
+            
+    return train_fn, train_fn_grad
    
 def finetune_functions_sda_cg(sda, datasets, window_size):
     '''Generates a function `train` that implements one step of
@@ -466,27 +537,32 @@ def finetune_functions_sda_cg(sda, datasets, window_size):
             sda.logLayer.test_error_array[-1].append(sda.logLayer.validation_scores[1])
     return train_fn, train_fn_grad, callback
     
-def pretrain_sda_cg(sda, train_set_x, window_size, pretraining_epochs, corruption_levels):
+def pretrain_sda_cg(sda, train_names, window_size, pretraining_epochs, corruption_levels):
     ## Pre-train layer-wise
     print '... getting the pretraining functions'
     import scipy.optimize
-    pretraining_fns, pretraining_updates = pretraining_functions_sda_cg(
-        sda=sda,
-        train_set_x=train_set_x,
-        window_size=window_size,
-        corruption_levels=corruption_levels
-    )
-    print '... pre-training the model'
-    # using scipy conjugate gradient optimizer
-    print ("Optimizing using scipy.optimize.fmin_cg...")
-    for i in xrange(sda.n_layers):
-        best_w_b = scipy.optimize.fmin_cg(
-            f=pretraining_fns[i],
-            x0=numpy.zeros((sda.dA_layers[i].n_visible + 1) * sda.dA_layers[i].n_hidden,
-                           dtype=sda.dA_layers[i].input.dtype),
-            fprime=pretraining_updates[i],
-            maxiter=pretraining_epochs
-        )                            
+    train_reader = ICHISeqDataReader(train_names)
+    n_train_patients =  len(train_names)
+    
+    for patients in xrange(n_train_patients):
+        train_set_x, train_set_y = train_reader.read_next_doc()
+        pretraining_fn, pretraining_update = pretraining_functions_sda_cg(
+            sda=sda,
+            train_set_x=train_set_x,
+            window_size=window_size,
+            corruption_levels=corruption_levels
+        )
+        print '... pre-training the model'
+        # using scipy conjugate gradient optimizer
+        print ("Optimizing using scipy.optimize.fmin_cg...")
+        for i in xrange(sda.n_layers):
+            best_w_b = scipy.optimize.fmin_cg(
+                f=partial(pretraining_fn, da_index = i),
+                x0=numpy.zeros((sda.dA_layers[i].n_visible + 1) * sda.dA_layers[i].n_hidden,
+                               dtype=sda.dA_layers[i].input.dtype),
+                fprime=partial(pretraining_update, da_index = i),
+                maxiter=pretraining_epochs
+            )                            
     return sda
     
 def finetune_sda_cg(sda, datasets, window_size, training_epochs):

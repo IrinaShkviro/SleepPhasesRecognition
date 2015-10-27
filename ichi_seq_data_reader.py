@@ -9,7 +9,7 @@ from preprocess import preprocess_sequence, preprocess_for_HMM,\
 
 class ICHISeqDataReader(object):
     def __init__(self, seqs_for_analyse):
-        print "init ICHISeqDataReader"
+        #print "init ICHISeqDataReader"
         
         #seqs - files for each patient
         self.seqs = seqs_for_analyse
@@ -99,7 +99,7 @@ class ICHISeqDataReader(object):
         for f in self.seqs:
             # sequence_file - full path to each document
             sequence_file = dataset+"/"+str(f)+".npy"
-            print sequence_file
+            #print sequence_file
             self.sequence_files.append(sequence_file)
             
     # define current file for reading
@@ -340,33 +340,46 @@ class ICHISeqDataReader(object):
             all_visible_seqs.append((set_x, label))
         
         return all_visible_seqs
-
+        
     # read one doc in sequence
-    def read_one_and_divide(self, rank, start_base):
+    def read_one_with_window(self, window_size, divide):
         # sequence_matrix = array[size of 1st doc][data.x, data.y, data.z, data.gt]
         sequence_matrix = self.get_sequence()
 
         # d_x1 = array[size of 1st doc][x, y, z]
-        d_x = preprocess_for_HMM(sequence_matrix[:, 0:self.n_in], rank, start_base)
+        d_x = preprocess_sequence(sequence_matrix[:, 0:self.n_in])
         #d_x1 = preprocess_sequence(sequence_matrix[:, 0:self.n_in])
         
         # d_y1 = array[size of 1st doc][labels]
         d_y = sequence_matrix[:, self.n_in:self.n_in+1].reshape(-1)
 
-        data = zip(d_x, d_y)
+        n_samples = d_x.shape[0] - window_size + 1
+        d_x_window = [d_x[i: i+window_size].flatten() for i in xrange(n_samples)]
+        d_y_window = [d_y[i + window_size/2] for i in xrange(n_samples)]        
+        if (not divide):
+            set_x = theano.shared(numpy.asarray(d_x_window,
+                                                       dtype=theano.config.floatX),
+                                         borrow=True)
+            set_y = T.cast(theano.shared(numpy.asarray(d_y_window,
+                                                       dtype=theano.config.floatX),
+                                         borrow=True), 'int32')
+            return (set_x, set_y)
+            
+        data = zip(d_x_window, d_y_window)
         visible_seqs = []
         
         for label in xrange(7):
             d_x_for_label=[]
             for row in data:
-                if row[1] == label:
+                if row[-1] == label:
                     d_x_for_label.append(row[0])
+            
             #data_for_cur_label = all_data[numpy.where(all_data[:,1] == label)]
                         
             set_x = theano.shared(numpy.asarray(d_x_for_label,
                                                        dtype=theano.config.floatX),
                                          borrow=True)
             
-            visible_seqs.append((set_x, label))
+            visible_seqs.append(set_x)
         
         return visible_seqs
